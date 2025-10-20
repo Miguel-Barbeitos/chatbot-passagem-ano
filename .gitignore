@@ -65,7 +65,7 @@ tmp/
 *.gz
 *.7z
 
-# --- Node / Web (caso algum dia adiciones UI extra) ---
+# --- Node / Web (caso adiciones UI extra) ---
 node_modules/
 dist/
 build/
@@ -75,3 +75,15 @@ package-lock.json
 settings.json
 config.json
 
+# ===============================
+# 💾 Exceções (ficam guardados no Git)
+# ===============================
+
+# Mantém ficheiros de memória e estatísticas
+!memory.json
+!analytics.json
+!training_data.json
+
+# Mantém ficheiros de eventos e perfis
+!event.json
+!profiles.json
