@@ -1,0 +1,10 @@
+# Ignorar ficheiros do Visual Studio
+.vs/
+*.vsidx
+
+# Ignorar cache e temporários
+__pycache__/
+*.pyc
+*.pyo
+*.DS_Store
+qdrant_data/
