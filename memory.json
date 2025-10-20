@@ -1,0 +1,12 @@
+﻿{
+  "wifi": {
+    "perguntas": ["qual é o wifi", "tem internet", "qual é a senha da rede"],
+    "resposta": "A senha do Wi-Fi é CasaDoMiguel2025 😉",
+    "vezes": 5
+  },
+  "local": {
+    "perguntas": ["onde é a festa", "é longe", "onde vai ser"],
+    "resposta": "Vai ser em Casa do Miguel, no Porto 🎆",
+    "vezes": 3
+  }
+}

@@ -2,10 +2,17 @@ import streamlit as st
 import json, random, os, time
 from datetime import datetime
 from learning_qdrant import guardar_mensagem, procurar_resposta_semelhante
+from learning_memory import atualizar_memoria, procurar_resposta_memorizada
 
+# =====================================================
+# ⚙️ Configuração
+# =====================================================
 st.set_page_config(page_title="🎉 Diácono Remédios - Chatbot 🎆", page_icon="🎆")
 st.title("🎉 Assistente da Passagem de Ano 2025/2026 🎆")
 
+# =====================================================
+# 📂 Carregar dados
+# =====================================================
 def carregar_json(path):
     if os.path.exists(path):
         with open(path, encoding="utf-8") as f:
@@ -15,6 +22,9 @@ def carregar_json(path):
 profiles = carregar_json("profiles.json")
 event = carregar_json("event.json")
 
+# =====================================================
+# 🧍 Identificação
+# =====================================================
 nomes = [p["nome"] for p in profiles]
 params = st.experimental_get_query_params()
 
@@ -32,18 +42,31 @@ if "user" not in st.session_state:
 nome = st.session_state["user"]
 perfil = next(p for p in profiles if p["nome"] == nome)
 
+# =====================================================
+# 👋 Saudação
+# =====================================================
 hora = datetime.now().hour
 saud = "Bom dia" if hora < 12 else "Boa tarde" if hora < 20 else "Boa noite"
 st.success(f"{saud}, {nome}! 👋 Bem-vindo ao Assistente da Passagem de Ano!")
 
-ddef gerar_resposta(pergunta, perfil):
+# =====================================================
+# 🧠 Geração de resposta
+# =====================================================
+def gerar_resposta(pergunta, perfil):
     pergunta_l = pergunta.lower()
-    resposta_memoria = procurar_resposta_semelhante(pergunta_l)
-    if resposta_memoria:
-        return f"Lembro-me disso! 😉 {resposta_memoria}"
 
-    # --- Identidade (Diácono Remédios) ---
-    if any(p in pergunta_l for p in ["como te chamas", "quem es tu", "quem és tu", "qual é o teu nome", "qual e o teu nome", "como te devo chamar", "teu nome", "te chamas"]):
+    # 1️⃣ Verifica se já existe uma resposta memorizada (aprendizagem local)
+    resposta_memorizada = procurar_resposta_memorizada(pergunta_l)
+    if resposta_memorizada:
+        return f"Lembro-me disso! 😉 {resposta_memorizada}"
+
+    # 2️⃣ Tenta encontrar uma resposta semelhante na base vetorial (Qdrant)
+    resposta_semelhante = procurar_resposta_semelhante(pergunta_l)
+    if resposta_semelhante:
+        return f"Já me perguntaste algo parecido 😄 {resposta_semelhante}"
+
+    # 3️⃣ Caso contrário, gera uma resposta nova (com regras básicas)
+    if any(p in pergunta_l for p in ["como te chamas", "quem es tu", "quem és tu", "qual é o teu nome", "como te devo chamar", "teu nome", "te chamas"]):
         respostas_nome = [
             "Sou o Diácono Remédios, ao vosso serviço 🙏😄",
             "Chamam-me Diácono Remédios — e trago boa disposição! 😎",
@@ -59,14 +82,18 @@ ddef gerar_resposta(pergunta, perfil):
         ]
         resposta = random.choice(respostas_nome)
 
-    elif "wifi" in pergunta_l or "wi-fi" in pergunta_l:
-        resposta = f"A senha do Wi-Fi é **{event.get('wifi','CasaDoMiguel2025')}** 😉"
-    elif "onde" in pergunta_l:
-        resposta = f"A festa vai ser em **{event.get('local','Porto')}** 🎆"
-    elif "hora" in pergunta_l or "quando" in pergunta_l:
-        resposta = f"Começa às **{event.get('hora','21h00')}** — não faltes! 🕺"
-    elif "roupa" in pergunta_l or "dress" in pergunta_l:
-        resposta = f"A cor deste ano é **amarelo 💛** — brilha muito, {perfil['nome']}!"
+    elif any(w in pergunta_l for w in ["wifi", "wi-fi", "wi fi", "internet", "rede"]):
+        resposta = f"A senha do Wi-Fi é **{event.get('wifi', 'CasaDoMiguel2025')}** 😉"
+
+    elif any(w in pergunta_l for w in ["onde", "local", "morada", "sitio", "localização", "fica longe"]):
+        resposta = f"A festa vai ser em **{event.get('local', 'Porto')}** 🎆"
+
+    elif any(w in pergunta_l for w in ["hora", "quando", "a que horas", "começa", "comeca"]):
+        resposta = f"Começa às **{event.get('hora', '21h00')}** — não faltes! 🕺"
+
+    elif any(w in pergunta_l for w in ["roupa", "dress", "vestir", "código", "cor", "amarelo"]):
+        resposta = f"O dress code é **{event.get('dress_code', 'casual elegante')}**, e a cor deste ano é **amarelo 💛**."
+
     else:
         resposta = random.choice([
             "Vai ser uma noite épica 🎉",
@@ -74,10 +101,15 @@ ddef gerar_resposta(pergunta, perfil):
             "Não revelo tudo, mas vai ser memorável 🎆"
         ])
 
+    # 4️⃣ Guarda o novo conhecimento nas duas memórias
     guardar_mensagem(perfil["nome"], pergunta, resposta)
+    atualizar_memoria(pergunta, resposta)
+
     return resposta
 
-
+# =====================================================
+# 💬 Interface de chat
+# =====================================================
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
