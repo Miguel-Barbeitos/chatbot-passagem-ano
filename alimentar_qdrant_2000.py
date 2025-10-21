@@ -1,130 +1,253 @@
-﻿import random
-from tqdm import tqdm
+﻿# alimentar_qdrant_2000.py
+import os, random
+from itertools import product
 from sentence_transformers import SentenceTransformer
 from qdrant_client import QdrantClient, models
 
-# =====================================================
-# ⚙️ Configuração
-# =====================================================
 QDRANT_PATH = "qdrant_data"
 COLLECTION_NAME = "chatbot_passagem_ano"
-model = SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+MODEL_NAME = "intfloat/multilingual-e5-base"
+VECTOR_SIZE = 768
 
-print("🎉 A alimentar o Qdrant com sabedoria do Diácono Remédios...")
+random.seed(42)
+os.makedirs(QDRANT_PATH, exist_ok=True)
 
+print("🔧 A carregar modelo:", MODEL_NAME)
+model = SentenceTransformer(MODEL_NAME)
 client = QdrantClient(path=QDRANT_PATH)
 
-# Garante que a coleção existe
-collections = [c.name for c in client.get_collections().collections]
-if COLLECTION_NAME not in collections:
-    client.create_collection(
-        collection_name=COLLECTION_NAME,
-        vectors_config=models.VectorParams(size=384, distance=models.Distance.COSINE)
-    )
+# ⚠️ LIMPA E RECRIA
+if COLLECTION_NAME in [c.name for c in client.get_collections().collections]:
+    print(f"⚠️ Coleção '{COLLECTION_NAME}' existe. A apagar…")
+    client.delete_collection(COLLECTION_NAME)
 
-# =====================================================
-# 🎭 Base de temas
-# =====================================================
-temas = {
-    "saudacao": [
-        "olá", "boa noite", "como estás", "tudo bem", "hey", "oi", "bom dia", "boas"
-    ],
-    "festa": [
-        "onde é a festa", "a que horas começa", "quem vai", "vai haver comida", "vai haver música",
-        "vai haver dj", "posso levar alguém", "há estacionamento", "qual é o tema da festa"
-    ],
-    "benfica": [
-        "quem vai ganhar o campeonato", "o benfica vai ganhar", "o porto tem hipótese",
-        "o sporting está forte", "quem é o maior clube de portugal", "o benfica vai ser campeão",
-        "achas que o benfica ganha hoje", "o benfica é o melhor"
-    ],
-    "bebidas": [
-        "há cerveja", "vai haver vinho", "tem caipirinha", "que bebidas há", "posso levar gin",
-        "há champanhe", "há água com gás"
-    ],
-    "piadas": [
-        "conta uma piada", "faz-me rir", "diz uma anedota", "conta uma história engraçada",
-        "tens sentido de humor", "és divertido"
-    ],
-    "roupa": [
-        "o que devo vestir", "qual é o dress code", "tenho de levar amarelo", "há tema de roupa"
-    ],
-}
+print("🆕 A criar coleção…")
+client.create_collection(
+    collection_name=COLLECTION_NAME,
+    vectors_config=models.VectorParams(size=VECTOR_SIZE, distance=models.Distance.COSINE),
+)
 
-# =====================================================
-# 💬 Possíveis respostas
-# =====================================================
-respostas_por_tema = {
-    "saudacao": [
-        "Bem-vindo, {nome}! 🎉 Está quase na hora do brinde!",
-        "Olá {nome}! O Diácono Remédios ao seu dispor 🙏✨",
-        "Boas, {nome}! Preparado para dançar até cair? 💃🕺",
-        "Ora viva, {nome}! 😄 Que alegria vê-lo pronto para a festa!",
-        "Bom ver-te, {nome}! Já cheira a champanhe e alegria 🍾",
+def pairs(intents, replies, contexto, augment_syns=None):
+    """Gera pares (pergunta, resposta, contexto) com combinações e sinónimos simples."""
+    res = []
+    base = intents[:]
+    if augment_syns:
+        # cria variacoes simples substituindo termos
+        for q in intents:
+            for a, b in augment_syns:
+                if a in q:
+                    base.append(q.replace(a, b))
+    for q in base:
+        for r in replies:
+            res.append((q, r, contexto))
+    return res
+
+# ---------- Temas e respostas ----------
+nomes = ["Miguel", "Jojo", "Catarina", "Diogo", "Inês", "Barbeitos", "Raquel", "Gustavo"]
+
+festa_local = pairs(
+    intents=[
+        "onde é a festa", "onde vai ser", "qual é o local", "morada da festa",
+        "é no porto", "fica longe de gaia", "qual o sítio"
     ],
-    "festa": [
-        "A festa vai ser em Casa do Miguel, no Porto — imperdível! 🎆",
-        "Começa às 21h00, mas a animação dura até ao nascer do sol 🌅",
-        "Vai haver comida, música e boa disposição — o Diácono garante!",
-        "DJ confirmado, {nome}! Prepara-te para dançar 💃🕺",
-        "Sim, podes levar companhia — quanto mais almas, melhor a festa 😄",
+    replies=[
+        "A festa é em Casa do Miguel, no Porto 🎆",
+        "Casa do Miguel, Porto — o epicentro da diversão 😎",
+        "No Porto, em casa do Miguel. Não tem como falhar! 🏠"
     ],
-    "benfica": [
-        "O Benfica, claro! O maior de Portugal 🔴⚪",
-        "O Porto? Só o da cidade da festa, não o do campeonato 😏",
-        "O Sporting até tenta, mas o Benfica é quem manda! 💪",
-        "Benfica campeão — escreve o que o Diácono te diz ✍️",
-        "Se o Benfica jogar, é vitória certa. É lei divina 😇",
-        "O maior de Portugal, o Glorioso! 🔴⚪",
-        "O Porto pode tentar, mas vai ver a festa pela televisão 📺😂"
+    contexto="festa",
+    augment_syns=[("porto", "Porto"), ("sítio", "sitio")]
+)
+
+festa_hora = pairs(
+    intents=[
+        "a que horas começa", "quando começa a festa", "qual é a hora", "quando é"
     ],
-    "bebidas": [
-        "Há cerveja, vinho e até caipirinhas — é melhor que um bar! 🍹",
-        "Claro que há cerveja, {nome}! Está mais fria que o coração do árbitro 😜",
-        "O champanhe já está no gelo 🍾",
-        "Há gin, vinho e boa disposição — o essencial! 🍸",
-        "Tens de provar o ponche do Diácono… cura até ressacas 😇",
+    replies=[
+        "Começa às 21h00 e vai até ao nascer do sol 🌅",
+        "A partir das 21h00. Leva energia, vai ser longo! 💃🕺",
+        "21h00 em ponto — o Diácono é pontual ⏰"
     ],
-    "piadas": [
-        "Sabes qual é o cúmulo do Diácono? Casar os outros e ficar solteiro 😂",
-        "Dizem que o Diácono Remédios não bebe… mas a garrafa discorda 🍾",
-        "Fui ao médico… ele disse que eu estava com excesso de alegria 😄",
-        "Sabes por que o Benfica é santo? Porque faz milagres todos os domingos 😇",
+    contexto="festa"
+)
+
+comida_bebida = pairs(
+    intents=[
+        "vai haver comida", "há jantar", "o que vamos comer", "que bebidas há",
+        "há cerveja", "vai haver vinho", "tem caipirinha", "há champanhe"
+    ],
+    replies=[
+        "Vai haver comida e bebida em abundância 🍽️🥂",
+        "Cerveja fria, vinho bom e caipirinhas — serviço completo 🍹",
+        "Champanhe já está no gelo. Brinde garantido 🍾",
+        "Há de tudo um pouco — confia no Diácono 😇"
+    ],
+    contexto="festa"
+)
+
+musica_dj = pairs(
+    intents=[
+        "vai haver musica", "vai haver música", "há dj", "quem é o dj", "vai dar para dançar",
+        "vai ter karaoke", "posso pedir músicas"
+    ],
+    replies=[
+        "DJ confirmado — o chão vai tremer 💃🕺",
+        "Sim, e dá para pedidos (com moderação 😄) 🎧",
+        "Karaoke depois da meia-noite… por tua conta e risco 🎤"
+    ],
+    contexto="musica",
+    augment_syns=[("musica", "música")]
+)
+
+wifi = pairs(
+    intents=[
+        "qual é o wifi", "qual a senha do wifi", "qual a rede wi fi", "wi-fi", "senha da internet"
+    ],
+    replies=[
+        "Wi-Fi: CasaDoMiguel2025 📶",
+        "A senha do Wi-Fi é CasaDoMiguel2025 — usa com juízo 😉",
+        "Rede: CasaDoMiguel2025. Palavra-passe: diversão 🎉"
+    ],
+    contexto="wifi"
+)
+
+dress = pairs(
+    intents=[
+        "qual é o dress code", "o que vestir", "que roupa devo levar", "há tema de roupa", "qual é a cor do ano"
+    ],
+    replies=[
+        "Dress code: casual elegante ✨ e a cor é amarelo 💛",
+        "Vem bonito e confortável; amarelo dá sorte 💛",
+        "Brilha com amarelo — combina com o brinde 🎇"
+    ],
+    contexto="roupa"
+)
+
+logistica = pairs(
+    intents=[
+        "há estacionamento", "posso levar alguém", "dá para uber", "há metro perto", "é longe"
+    ],
+    replies=[
+        "Há lugares nas ruas próximas e Uber funciona bem 🚗",
+        "Podes levar companhia — quanto mais almas, melhor 🎉",
+        "Metro e Uber são boas opções. O importante é chegar 😄"
+    ],
+    contexto="logistica"
+)
+
+piadas_geral = pairs(
+    intents=[
+        "conta uma piada", "faz-me rir", "diz uma anedota", "uma piada do diacono",
+        "diz algo engraçado", "estás com humor"
+    ],
+    replies=[
         "Quer uma piada? O Porto ganhar ao Benfica 😂",
+        "Dizem que o Diácono não dança… a pista discorda 🕺",
+        "O meu médico receitou gargalhadas — dose diária ilimitada 😄"
     ],
-    "roupa": [
-        "O dress code é elegante, mas a cor do ano é amarelo 💛",
-        "Brilha muito, {nome}! Amarelo é a cor da sorte ✨",
-        "Roupa leve, coração quente e sorriso aberto 😄",
-        "O Diácono recomenda: amarelo e um copo na mão 🍸",
-        "Casual elegante, mas com brilho — como o Benfica em campo 😎",
-    ]
-}
+    contexto="piadas"
+)
 
-# =====================================================
-# 🧠 Alimentar Qdrant
-# =====================================================
-def adicionar_pergunta_resposta(pergunta, resposta, contexto):
-    vector = model.encode(pergunta).tolist()
-    payload = {
-        "pergunta": pergunta,
-        "resposta": resposta,
-        "contexto": contexto
-    }
-    client.upsert(
-        collection_name=COLLECTION_NAME,
-        points=[models.PointStruct(id=random.randint(0, 1_000_000_000), vector=vector, payload=payload)]
+futebol_benfica = pairs(
+    intents=[
+        "hoje joga o benfica", "o benfica vai ganhar", "quem é melhor benfica ou porto",
+        "benfica é o maior", "o sporting tem hipótese", "quem vai ser campeão"
+    ],
+    replies=[
+        "O Benfica, claro! O maior de Portugal 🔴⚪",
+        "Benfica campeão — escreve o que te digo ✍️",
+        "O Porto? Só o da cidade da festa, não o do campeonato 😏",
+        "Sporting tenta, mas o Glorioso manda 💪"
+    ],
+    contexto="futebol"
+)
+
+ressaca = pairs(
+    intents=[
+        "e a ressaca amanhã", "amanhã trabalho", "cura para ressaca", "vou sofrer amanhã"
+    ],
+    replies=[
+        "Hidratação, café e fé. O Diácono abençoa ☕🙏",
+        "Dormir, pizza e arrependimento — ritual oficial 😅",
+        "Água hoje, gratidão amanhã 💧"
+    ],
+    contexto="dia_seguinte"
+)
+
+tempo = pairs(
+    intents=[
+        "vai chover", "vai estar frio", "como vai estar o tempo", "vai estar calor", "previsão do tempo"
+    ],
+    replies=[
+        "Nem chuva nem frio param esta festa 🎆",
+        "Se estiver frio, a dança aquece 🔥",
+        "O clima é de alegria — isso eu garanto 😎"
+    ],
+    contexto="tempo"
+)
+
+smalltalk = pairs(
+    intents=[
+        "vai ser fixe", "há surpresas", "o que vai acontecer", "tens novidades",
+        "fala comigo", "responde", "estás aí", "podes ajudar"
+    ],
+    replies=[
+        "Vai ser épico! Mesmo o Diácono vai dançar 🕺",
+        "Há surpresas… mas se conto deixa de ser surpresa 😉",
+        "Sempre aqui, pronto para animar a conversa 😄",
+        "Claro que ajudo — dispara!"
+    ],
+    contexto="geral"
+)
+
+# juntar tudo e aumentar com nomes em respostas
+datasets = [festa_local, festa_hora, comida_bebida, musica_dj, wifi, dress, logistica,
+            piadas_geral, futebol_benfica, ressaca, tempo, smalltalk]
+
+dados = []
+for bloque in datasets:
+    for q, r, ctx in bloque:
+        if "{nome}" in r:
+            r = r.format(nome=random.choice(nomes))
+        dados.append((q, r, ctx))
+
+# Aumentar volume com variações simples de pontuação e maiúsculas
+def expand(q):
+    opts = {q}
+    opts.add(q.capitalize())
+    opts.add(q + "?")
+    opts.add(q + "!")
+    return list(opts)
+
+dados_expand = []
+for q, r, ctx in dados:
+    for qv in expand(q):
+        dados_expand.append((qv, r, ctx))
+
+# Limitar ~1200 pares para não exceder tempo
+random.shuffle(dados_expand)
+dados_final = dados_expand[:1200]
+print(f"🧠 A preparar {len(dados_final)} pares para indexação…")
+
+# Encode em batch
+perguntas = [q for q, _, _ in dados_final]
+vetores = model.encode(perguntas, batch_size=64, show_progress_bar=False).tolist()
+
+# Upsert em chunks
+points = []
+for i, (q, r, ctx) in enumerate(dados_final):
+    points.append(
+        models.PointStruct(
+            id=i + 1,
+            vector=vetores[i],
+            payload={"pergunta": q, "resposta": r, "contexto": ctx}
+        )
     )
+    if len(points) == 500:
+        client.upsert(collection_name=COLLECTION_NAME, points=points)
+        points = []
 
-total = 0
-for contexto, perguntas in tqdm(temas.items(), desc="A alimentar o Qdrant..."):
-    respostas = respostas_por_tema[contexto]
-    for pergunta in perguntas:
-        for _ in range(40):  # 40 variações por tema = ~2000 frases
-            nome = random.choice(["Miguel", "Jojo", "Catarina", "Diogo", "Inês", "Barbeitos"])
-            resposta = random.choice(respostas).format(nome=nome)
-            adicionar_pergunta_resposta(pergunta, resposta, contexto)
-            total += 1
+if points:
+    client.upsert(collection_name=COLLECTION_NAME, points=points)
 
-print(f"✅ Alimentação concluída com {total} entradas!")
-print("💾 O Diácono Remédios está cheio de sabedoria e pronto para a festa 🎉")
+print(f"✅ Inseridos {len(dados_final)} pares na coleção '{COLLECTION_NAME}'.")
