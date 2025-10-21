@@ -126,17 +126,21 @@ def procurar_resposta_contextual(pergunta, historico):
 # Limpar coleção
 # =====================================================
 def limpar_qdrant():
+    """Apaga e recria a coleção Qdrant de forma segura."""
     try:
         client.delete_collection(COLLECTION_NAME)
         print("🧹 Coleção Qdrant apagada.")
+        
         client.create_collection(
             collection_name=COLLECTION_NAME,
-            vectors_config=client.create_collection(
-    collection_name=COLLECTION_NAME,
-    vectors_config={
-        "default": models.VectorParams(size=768, distance=models.Distance.COSINE)
-    }
-)
-        print("✨ Nova coleção criada.")
+            vectors_config={
+                "default": models.VectorParams(
+                    size=768,
+                    distance=models.Distance.COSINE
+                )
+            }
+        )
+        print("✨ Nova coleção criada com sucesso.")
     except Exception as e:
-        print(f"Erro ao limpar Qdrant: {e}")
+        print(f"❌ Erro ao limpar Qdrant: {e}")
+
