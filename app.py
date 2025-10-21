@@ -104,17 +104,30 @@ def gerar_resposta(pergunta, perfil):
         atualizar_memoria(pergunta, resposta)
         return resposta
 
-    # 2️⃣ Memória semântica (Qdrant)
+    # 2️⃣ Comparação de locais (ex: Porto vs Algarve)
+    if any(cidade in pergunta_l for cidade in ["porto", "lisboa", "algarve", "coimbra", "braga", "aveiro", "faro", "guimaraes"]):
+        locais_encontrados = [cidade for cidade in ["porto", "lisboa", "algarve", "coimbra", "braga", "aveiro", "faro", "guimaraes"] if cidade in pergunta_l]
+        if len(locais_encontrados) >= 2:
+            resposta = random.choice([
+                f"Bem... depende de quantas paragens fizeres pelo caminho 😄 {locais_encontrados[0].capitalize()} e {locais_encontrados[1].capitalize()} ficam a umas boas horas de carro 🚗",
+                f"{locais_encontrados[0].capitalize()} e {locais_encontrados[1].capitalize()}? Digamos que dá tempo para ouvir umas boas playlists no caminho 🎶",
+                f"Entre {locais_encontrados[0].capitalize()} e {locais_encontrados[1].capitalize()} são umas horitas, mas nada que uma boa conversa e música não resolvam 😉"
+            ])
+            guardar_mensagem(perfil["nome"], pergunta, resposta)
+            atualizar_memoria(pergunta, resposta)
+            return resposta
+
+    # 3️⃣ Memória semântica (Qdrant)
     resposta_semelhante = procurar_resposta_semelhante(pergunta_l)
     if resposta_semelhante:
         return f"Já me perguntaste algo parecido 😄 {resposta_semelhante}"
 
-    # 3️⃣ Memória local
+    # 4️⃣ Memória local
     resposta_memorizada = procurar_resposta_memorizada(pergunta_l)
     if resposta_memorizada:
         return f"Lembro-me disso! 😉 {resposta_memorizada}"
 
-    # 4️⃣ Regras gerais
+    # 5️⃣ Regras gerais
     if any(w in pergunta_l for w in ["wifi", "wi fi", "wi-fi", "internet", "rede"]):
         resposta = f"A senha do Wi-Fi é **{event.get('wifi', 'CasaDoMiguel2025')}** 😉"
 
