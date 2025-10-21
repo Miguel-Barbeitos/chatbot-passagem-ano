@@ -1,8 +1,10 @@
 import streamlit as st
 import json, random, os, time, re, unicodedata
 from datetime import datetime
-from learning_qdrant import guardar_mensagem, procurar_resposta_semelhante
+from learning_qdrant import guardar_mensagem, procurar_resposta_semelhante, procurar_resposta_contextual
 from learning_memory import atualizar_memoria, procurar_resposta_memorizada
+
+
 
 # =====================================================
 # ⚙️ Configuração inicial
