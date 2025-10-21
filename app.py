@@ -102,50 +102,97 @@ def ajustar_tom(texto: str, contexto: str, perfil: dict) -> str:
 # =====================================================
 # 💬 Motor de resposta
 # =====================================================
-def gerar_resposta(pergunta_raw: str, perfil: dict) -> str:
-    pergunta_l = normalizar(pergunta_raw)
-
-    # 1️⃣ — Saudações diretas
-    if any(t in pergunta_l for t in ["ola", "olá", "boas", "bom dia", "boa tarde", "boa noite"]):
-        respostas = [
-            f"Bom ver-te, {perfil['nome']}! Que nunca falte o café nem o champanhe ☕🍾",
-            f"Olá, {perfil['nome']}! Pronto para a festa? 🎉",
-            f"Boas, {perfil['nome']}! Preparado para dançar? 💃🕺",
-            f"{perfil['nome']}, que bom ler-te! Vai ser épico. 🥳",
-        ]
-        resposta = random.choice(respostas)
-        guardar_mensagem(perfil["nome"], pergunta_l, resposta, perfil, contexto="saudacao")
-        return resposta
-
-    # 2️⃣ — Consultar Qdrant
+# =====================================================
+# 🧠 Função principal — gerar resposta inteligente
+# =====================================================
+def gerar_resposta(pergunta: str, perfil: dict):
+    pergunta_l = normalizar(pergunta)
     intencao = identificar_intencao(pergunta_l)
-    resposta_memoria = procurar_resposta_semelhante(pergunta_l, intencao=intencao, limite_conf=0.6, top_k=3)
+
+    # 1️⃣ — Procurar resposta semelhante no Qdrant
+    resposta_memoria = procurar_resposta_semelhante(
+        pergunta_l, intencao=intencao, limite_conf=0.55, top_k=3
+    )
 
     if resposta_memoria:
         guardar_mensagem(perfil["nome"], pergunta_l, resposta_memoria, perfil, contexto=intencao)
         return ajustar_tom(resposta_memoria, intencao, perfil)
 
-    # 3️⃣ — Fallback: perguntas básicas
-    if any(t in pergunta_l for t in ["como vais", "tudo bem", "como estás", "esta tudo bem"]):
+    # 2️⃣ — Regras fixas (fallback rápido)
+    resposta_regra, contexto = regras_fallback(pergunta_l)
+    if resposta_regra:
+        guardar_mensagem(perfil["nome"], pergunta_l, resposta_regra, perfil, contexto)
+        return ajustar_tom(resposta_regra, contexto, perfil)
+
+    # 3️⃣ — Confirmações com memória no Qdrant
+    if any(p in pergunta_l for p in ["confirmou", "quem vai", "vai à festa", "vai a festa"]):
+        try:
+            from learning_qdrant import client, models
+
+            resultados = client.scroll(
+                collection_name="chatbot_passagem_ano",
+                scroll_filter=models.Filter(
+                    must=[models.FieldCondition(key="contexto", match=models.MatchValue(value="confirmacoes"))]
+                ),
+                limit=200
+            )
+
+            confirmados = []
+            for ponto in resultados[0]:
+                if ponto.payload and "resposta" in ponto.payload:
+                    resposta = ponto.payload["resposta"]
+                    for nome_c in ["Miguel", "Jojo", "Catarina", "Barbeitos", "Rita", "Pedro"]:
+                        if nome_c.lower() in resposta.lower():
+                            confirmados.append(nome_c)
+
+            confirmados = list(set(confirmados))  # remover duplicados
+
+            # --- Caso 1: Pergunta genérica
+            if any(t in pergunta_l for t in ["quem vai", "quem confirmou", "quantas pessoas", "quem está confirmado"]):
+                if confirmados:
+                    lista = ", ".join(confirmados)
+                    resposta = f"Até agora confirmaram: {lista} 🎉"
+                else:
+                    resposta = "Ainda ninguém confirmou oficialmente 😅"
+                guardar_mensagem(perfil["nome"], pergunta_l, resposta, perfil, contexto="confirmacoes")
+                return ajustar_tom(resposta, "confirmacoes", perfil)
+
+            # --- Caso 2: Pergunta específica ("a Jojo confirmou?")
+            for nome_c in ["Miguel", "Jojo", "Catarina", "Barbeitos", "Rita", "Pedro"]:
+                if nome_c.lower() in pergunta_l:
+                    if nome_c in confirmados:
+                        resposta = f"Sim! {nome_c} já confirmou e está preparad{'o' if nome_c != 'Catarina' else 'a'} para a festa 😄"
+                    else:
+                        resposta = f"Acho que {nome_c} ainda não confirmou... E tu, {perfil['nome']}, já confirmaste? 😉"
+                    guardar_mensagem(perfil["nome"], pergunta_l, resposta, perfil, contexto="confirmacoes")
+                    return ajustar_tom(resposta, "confirmacoes", perfil)
+
+        except Exception as e:
+            print(f"❌ Erro ao verificar confirmações: {e}")
+
+    # 4️⃣ — Saudações diretas (backup)
+    if any(t in pergunta_l for t in ["olá", "ola", "bom dia", "boa tarde", "boa noite", "como estás", "tudo bem"]):
         respostas = [
-            f"Estou ótimo, {perfil['nome']}! A preparar-me para a festa 🥳",
-            f"Tudo a bombar, {perfil['nome']}! E contigo? 😄",
-            f"Melhor agora que falas comigo, {perfil['nome']} 😏",
-            f"Por aqui tudo bem, pronto para o champanhe 🍾",
+            f"Olá, {perfil['nome']}! Pronto para a festa? 🎉",
+            f"Bom ver-te, {perfil['nome']}! Já cheira a champanhe 🍾",
+            f"Ei, {perfil['nome']}! Está quase na hora do brinde 🥂",
+            f"Olá, {perfil['nome']}! O Diácono está pronto 🙏✨",
         ]
         resposta = random.choice(respostas)
         guardar_mensagem(perfil["nome"], pergunta_l, resposta, perfil, contexto="saudacao")
-        return resposta
+        return ajustar_tom(resposta, "saudacao", perfil)
 
-    # 4️⃣ — Fallback genérico
+    # 5️⃣ — Fallback de conversa geral (último recurso)
     respostas_default = [
         "Vai ser uma noite épica 🎉",
         "Só posso dizer que vai haver surpresas 😉",
         "Não revelo tudo, mas vai ser memorável 🎆",
+        "A festa promete... mas não posso dar spoilers 😏",
     ]
     resposta = random.choice(respostas_default)
     guardar_mensagem(perfil["nome"], pergunta_l, resposta, perfil)
-    return resposta
+    return ajustar_tom(resposta, "geral", perfil)
+
 
 # =====================================================
 # 💬 Histórico + Chat
