@@ -157,7 +157,7 @@ def gerar_resposta(pergunta_raw: str, perfil: dict) -> str:
     intencao = identificar_intencao(pergunta_l)
 
     # 2) tentar Qdrant com filtro por contexto
-    resposta = procurar_resposta_semelhante(pergunta_l, intencao=intencao, limite_conf=0.8, top_k=1)
+    resposta = procurar_resposta_semelhante(pergunta_l, intencao=intencao, limite_conf=0.6, top_k=1)
 
     # 3) fallback informativo (sem exagerar no humor)
     if not resposta:
