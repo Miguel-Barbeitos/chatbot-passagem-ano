@@ -152,10 +152,39 @@ def gerar_resposta(pergunta: str, perfil: dict):
     if resposta_regra:
         guardar_mensagem(perfil["nome"], pergunta_l, resposta_regra, perfil, contexto)
         return ajustar_tom(resposta_regra, contexto, perfil)
-        # ✅ 2️⃣½ — Registar confirmações diretas do utilizador
-    if any(t in pergunta_l for t in ["confirmo", "confirmar", "vou", "eu vou", "sim vou", "claro que vou", "estarei lá"]):
+        # ✅ 3️⃣½ — Registar confirmações diretas do utilizador (com contexto)
+    ultima_intencao = st.session_state.get("ultimo_contexto", "")
+
+    if (
+        any(t in pergunta_l for t in ["confirmo", "confirmar", "eu confirmo", "vou", "sim vou", "claro que vou", "estarei lá", "lá estarei"])
+        and ultima_intencao == "confirmacoes"
+    ):
         resposta = f"Boa! 🎉 Fico feliz por saber que vais, {perfil['nome']}. Já estás na lista!"
         guardar_mensagem(perfil["nome"], pergunta_l, resposta, perfil, contexto="confirmacoes")
+
+        # Gravar no Qdrant como confirmação oficial
+        try:
+            from learning_qdrant import client, models
+            client.upsert(
+                collection_name="chatbot_passagem_ano",
+                points=[
+                    models.PointStruct(
+                        id=random.randint(0, 1_000_000_000),
+                        vector=[0.0] * 768,  # placeholder vector
+                        payload={
+                            "user": perfil["nome"],
+                            "resposta": f"{perfil['nome']} confirmou presença 🎉",
+                            "contexto": "confirmacoes"
+                        }
+                    )
+                ]
+            )
+            print(f"✅ {perfil['nome']} registado como confirmado no Qdrant.")
+        except Exception as e:
+            print(f"⚠️ Erro ao gravar confirmação no Qdrant: {e}")
+
+        st.session_state["ultimo_contexto"] = ""  # limpa o contexto depois de confirmar
+        return ajustar_tom(resposta, "confirmacoes", perfil)
 
         # Gravar no Qdrant como confirmação oficial
         try:
