@@ -145,68 +145,15 @@ def gerar_resposta(pergunta: str, perfil: dict):
 
     if resposta_memoria:
         guardar_mensagem(perfil["nome"], pergunta_l, resposta_memoria, perfil, contexto=intencao)
+        st.session_state["ultimo_contexto"] = intencao
         return ajustar_tom(resposta_memoria, intencao, perfil)
 
     # 2️⃣ — Regras fixas (fallback rápido)
     resposta_regra, contexto = regras_fallback(pergunta_l)
     if resposta_regra:
         guardar_mensagem(perfil["nome"], pergunta_l, resposta_regra, perfil, contexto)
+        st.session_state["ultimo_contexto"] = contexto
         return ajustar_tom(resposta_regra, contexto, perfil)
-        # ✅ 3️⃣½ — Registar confirmações diretas do utilizador (com contexto)
-    ultima_intencao = st.session_state.get("ultimo_contexto", "")
-
-    if (
-        any(t in pergunta_l for t in ["confirmo", "confirmar", "eu confirmo", "vou", "sim vou", "claro que vou", "estarei lá", "lá estarei"])
-        and ultima_intencao == "confirmacoes"
-    ):
-        resposta = f"Boa! 🎉 Fico feliz por saber que vais, {perfil['nome']}. Já estás na lista!"
-        guardar_mensagem(perfil["nome"], pergunta_l, resposta, perfil, contexto="confirmacoes")
-
-        # Gravar no Qdrant como confirmação oficial
-        try:
-            from learning_qdrant import client, models
-            client.upsert(
-                collection_name="chatbot_passagem_ano",
-                points=[
-                    models.PointStruct(
-                        id=random.randint(0, 1_000_000_000),
-                        vector=[0.0] * 768,  # placeholder vector
-                        payload={
-                            "user": perfil["nome"],
-                            "resposta": f"{perfil['nome']} confirmou presença 🎉",
-                            "contexto": "confirmacoes"
-                        }
-                    )
-                ]
-            )
-            print(f"✅ {perfil['nome']} registado como confirmado no Qdrant.")
-        except Exception as e:
-            print(f"⚠️ Erro ao gravar confirmação no Qdrant: {e}")
-
-        st.session_state["ultimo_contexto"] = ""  # limpa o contexto depois de confirmar
-        return ajustar_tom(resposta, "confirmacoes", perfil)
-
-        # Gravar no Qdrant como confirmação oficial
-        try:
-            from learning_qdrant import client, models
-            client.upsert(
-                collection_name="chatbot_passagem_ano",
-                points=[
-                    models.PointStruct(
-                        id=random.randint(0, 1_000_000_000),
-                        vector=[0.0] * 768,  # vector placeholder
-                        payload={
-                            "user": perfil["nome"],
-                            "resposta": f"{perfil['nome']} confirmou presença 🎉",
-                            "contexto": "confirmacoes"
-                        }
-                    )
-                ]
-            )
-        except Exception as e:
-            print(f"⚠️ Erro ao gravar confirmação no Qdrant: {e}")
-
-        return ajustar_tom(resposta, "confirmacoes", perfil)
 
     # 3️⃣ — Confirmações com memória no Qdrant
     if (
@@ -232,10 +179,11 @@ def gerar_resposta(pergunta: str, perfil: dict):
                         if nome_c.lower() in resposta.lower():
                             confirmados.append(nome_c)
 
-            confirmados = list(set(confirmados))
+            confirmados = list(set(confirmados))  # remover duplicados
 
             # --- Caso 1: Pergunta genérica
             if any(t in pergunta_l for t in ["quem vai", "quem confirmou", "quantas pessoas", "quem está confirmado"]):
+                st.session_state["ultimo_contexto"] = "confirmacoes"
                 if confirmados:
                     lista = ", ".join(confirmados)
                     resposta = f"Até agora confirmaram: {lista} 🎉"
@@ -247,6 +195,7 @@ def gerar_resposta(pergunta: str, perfil: dict):
             # --- Caso 2: Pergunta específica ("a Jojo confirmou?")
             for nome_c in ["Miguel", "Jojo", "Catarina", "Barbeitos", "Rita", "Pedro"]:
                 if nome_c.lower() in pergunta_l:
+                    st.session_state["ultimo_contexto"] = "confirmacoes"
                     if nome_c in confirmados:
                         resposta = f"Sim! {nome_c} já confirmou e está preparad{'o' if nome_c != 'Catarina' else 'a'} para a festa 😄"
                     else:
@@ -257,7 +206,40 @@ def gerar_resposta(pergunta: str, perfil: dict):
         except Exception as e:
             print(f"❌ Erro ao verificar confirmações: {e}")
 
-    # 4️⃣ — Saudações diretas
+    # ✅ 3️⃣½ — Registar confirmações diretas do utilizador (com contexto)
+    ultima_intencao = st.session_state.get("ultimo_contexto", "")
+    if (
+        any(t in pergunta_l for t in ["confirmo", "confirmar", "eu confirmo", "vou", "sim vou", "claro que vou", "estarei lá", "lá estarei"])
+        and ultima_intencao == "confirmacoes"
+    ):
+        resposta = f"Boa! 🎉 Fico feliz por saber que vais, {perfil['nome']}. Já estás na lista!"
+        guardar_mensagem(perfil["nome"], pergunta_l, resposta, perfil, contexto="confirmacoes")
+
+        # Gravar no Qdrant como confirmação oficial
+        try:
+            from learning_qdrant import client, models
+            client.upsert(
+                collection_name="chatbot_passagem_ano",
+                points=[
+                    models.PointStruct(
+                        id=random.randint(0, 1_000_000_000),
+                        vector=[0.0] * 768,
+                        payload={
+                            "user": perfil["nome"],
+                            "resposta": f"{perfil['nome']} confirmou presença 🎉",
+                            "contexto": "confirmacoes"
+                        }
+                    )
+                ]
+            )
+            print(f"✅ {perfil['nome']} registado como confirmado no Qdrant.")
+        except Exception as e:
+            print(f"⚠️ Erro ao gravar confirmação no Qdrant: {e}")
+
+        st.session_state["ultimo_contexto"] = ""  # limpa após confirmação
+        return ajustar_tom(resposta, "confirmacoes", perfil)
+
+    # 4️⃣ — Saudações diretas (backup)
     if any(t in pergunta_l for t in ["olá", "ola", "bom dia", "boa tarde", "boa noite", "como estás", "tudo bem"]):
         respostas = [
             f"Olá, {perfil['nome']}! Pronto para a festa? 🎉",
@@ -267,9 +249,10 @@ def gerar_resposta(pergunta: str, perfil: dict):
         ]
         resposta = random.choice(respostas)
         guardar_mensagem(perfil["nome"], pergunta_l, resposta, perfil, contexto="saudacao")
+        st.session_state["ultimo_contexto"] = "saudacao"
         return ajustar_tom(resposta, "saudacao", perfil)
 
-    # 5️⃣ — Fallback genérico
+    # 5️⃣ — Fallback geral
     respostas_default = [
         "Vai ser uma noite épica 🎉",
         "Só posso dizer que vai haver surpresas 😉",
@@ -278,7 +261,9 @@ def gerar_resposta(pergunta: str, perfil: dict):
     ]
     resposta = random.choice(respostas_default)
     guardar_mensagem(perfil["nome"], pergunta_l, resposta, perfil)
+    st.session_state["ultimo_contexto"] = "geral"
     return ajustar_tom(resposta, "geral", perfil)
+
 
 # =====================================================
 # 💬 Histórico + Chat
