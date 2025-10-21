@@ -7,7 +7,7 @@ from learning_memory import atualizar_memoria, procurar_resposta_memorizada
 # =====================================================
 # ⚙️ Configuração
 # =====================================================
-st.set_page_config(page_title="🎉 Diácono Remédios - Chatbot 🎆", page_icon="🎆")
+st.set_page_config(page_title="🎉 Assistente da Passagem de Ano 🎆", page_icon="🎆")
 st.title("🎉 Assistente da Passagem de Ano 2025/2026 🎆")
 
 # =====================================================
@@ -25,8 +25,8 @@ event = carregar_json("event.json")
 # =====================================================
 # 🧍 Identificação
 # =====================================================
-nomes = [p["nome"] for p in profiles]
-params = st.experimental_get_query_params()
+nnomes = [p["nome"] for p in profiles]
+params = st.query_params
 
 if "user" not in st.session_state:
     if "user" in params and params["user"][0] in nomes:
