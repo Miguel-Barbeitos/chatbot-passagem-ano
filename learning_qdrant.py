@@ -108,29 +108,40 @@ def guardar_mensagem(nome, pergunta, resposta, perfil, contexto="geral"):
 # =====================================================
 # 🔍 PROCURA SEMÂNTICA COM CONTEXTO
 # =====================================================
-def procurar_resposta_semelhante(pergunta, intencao=None, limite_conf=0.8, top_k=1):
-    """Procura a resposta mais relevante filtrada pela intenção"""
+def procurar_resposta_semelhante(pergunta, intencao=None, limite_conf=0.6, top_k=3):
+    """Procura a resposta mais relevante filtrada pela intenção (corrigido e mais permissivo)"""
     try:
         vector = model.encode(pergunta).tolist()
         filtro = None
+
+        # 🔤 Normalizar a intenção (remover acentos e minúsculas)
+        if intencao:
+            intencao = intencao.lower().replace("ç", "c").replace("ã", "a").replace("á", "a").replace("é", "e")
+
+        # Aplicar filtro de contexto apenas se existir intenção válida
         if intencao and intencao != "geral":
             filtro = models.Filter(
                 must=[models.FieldCondition(key="contexto", match=models.MatchValue(value=intencao))]
             )
+
         resultado = client.search(
             collection_name=COLLECTION_NAME,
             query_vector=vector,
             query_filter=filtro,
             limit=top_k
         )
+
         if not resultado:
             return None
+
         melhor = resultado[0]
         if melhor.score >= limite_conf:
             return melhor.payload.get("resposta")
+
     except Exception as e:
         print(f"❌ Erro ao procurar resposta: {e}")
     return None
+
 
 # =====================================================
 # 🧹 LIMPAR COLEÇÃO
