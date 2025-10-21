@@ -1,79 +1,156 @@
-﻿import os, json, random, time
+﻿import os
+import random
+import time
 from sentence_transformers import SentenceTransformer
 from qdrant_client import QdrantClient, models
 
 # =====================================================
-# ⚙️ Configuração do Qdrant e Modelo
+# ⚙️ Configuração
 # =====================================================
-qdrant_path = "./qdrant_storage"
-os.makedirs(qdrant_path, exist_ok=True)
+QDRANT_PATH = "./qdrant_storage"
+COLLECTION = "chat_memoria"
 
-client = QdrantClient(path=qdrant_path)
-collection = "chat_memoria"
+os.makedirs(QDRANT_PATH, exist_ok=True)
 
+# Modelo multilíngue otimizado para português e humor
 model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
 
-# Criar coleção se não existir
-if collection not in [c.name for c in client.get_collections().collections]:
+# Cliente Qdrant (local)
+client = QdrantClient(path=QDRANT_PATH)
+
+# Garante que a coleção existe
+if COLLECTION not in [c.name for c in client.get_collections().collections]:
+    print("🧠 A coleção não existe, a criar nova...")
     client.recreate_collection(
-        collection_name=collection,
-        vectors_config=models.VectorParams(size=model.get_sentence_embedding_dimension(), distance=models.Distance.COSINE),
+        collection_name=COLLECTION,
+        vectors_config=models.VectorParams(
+            size=model.get_sentence_embedding_dimension(),
+            distance=models.Distance.COSINE,
+        ),
     )
+else:
+    print("✅ Coleção existente carregada.")
 
 # =====================================================
-# 🧠 Guardar mensagem (com payload completo)
+# 💾 Guardar mensagens
 # =====================================================
-def guardar_mensagem(nome, pergunta, resposta, perfil=None):
-    vector = model.encode(pergunta).tolist()
-
-    perfil_tipo = "desconhecido"
-    if perfil:
-        perfil_tipo = perfil.get("personalidade", "desconhecido")
-
-    payload = {
-        "user": nome,
-        "pergunta": pergunta,
-        "resposta": resposta,
-        "timestamp": time.time(),
-        "fonte": "chat",
-        "contexto": {
-            "evento": "Passagem de Ano 2025/2026",
-            "local": "Casa do Miguel, Porto",
-            "perfil": perfil_tipo
+def guardar_mensagem(user: str, pergunta: str, resposta: str, tema: str = "geral"):
+    """Guarda uma nova mensagem no Qdrant com embeddings."""
+    try:
+        vector = model.encode(pergunta).tolist()
+        payload = {
+            "user": user,
+            "pergunta": pergunta,
+            "resposta": resposta,
+            "timestamp": time.time(),
+            "tema": tema,
+            "fonte": "interacao",
         }
-    }
-
-    client.upsert(
-        collection_name=collection,
-        points=[
-            models.PointStruct(
-                id=random.randint(1, 1_000_000_000),
-                vector=vector,
-                payload=payload
-            )
-        ]
-    )
+        ponto = models.PointStruct(
+            id=random.randint(1, 1_000_000_000),
+            vector=vector,
+            payload=payload,
+        )
+        client.upsert(collection_name=COLLECTION, points=[ponto])
+    except Exception as e:
+        print(f"⚠️ Erro ao guardar mensagem: {e}")
 
 # =====================================================
-# 🔍 Procurar resposta semelhante (nível 2 vetorial)
+# 🔍 Procurar respostas semelhantes
 # =====================================================
-def procurar_resposta_semelhante(pergunta, limite_conf=0.7, top_k=3):
-    vector = model.encode(pergunta).tolist()
+def procurar_resposta_semelhante(pergunta: str, limite_conf: float = 0.7, top_k: int = 3):
+    """Procura respostas semelhantes no Qdrant com base semântica."""
+    try:
+        vector = model.encode(pergunta).tolist()
 
-    results = client.search(
-        collection_name=collection,
-        query_vector=vector,
-        limit=top_k
-    )
+        resultados = client.search(
+            collection_name=COLLECTION,
+            query_vector=vector,
+            limit=top_k,
+        )
 
-    respostas = [hit.payload.get("resposta") for hit in results if hit.score >= limite_conf and hit.payload.get("resposta")]
-    if not respostas:
+        if not resultados:
+            return None
+
+        melhor = resultados[0]
+        score = melhor.score
+        if score < limite_conf:
+            return None
+
+        resposta = melhor.payload.get("resposta")
+        tema = melhor.payload.get("contexto", {}).get("tema") if "contexto" in melhor.payload else None
+        return resposta or None
+
+    except Exception as e:
+        print(f"⚠️ Erro ao procurar resposta semelhante: {e}")
         return None
 
-    # Combinar respostas semelhantes de forma natural
-    if len(respostas) == 1:
-        return respostas[0]
-    elif len(respostas) == 2:
-        return f"{respostas[0]} Além disso, {respostas[1].lower()}"
-    else:
-        return f"{respostas[0]} Também {respostas[1].lower()} e {respostas[2].lower()}."
+# =====================================================
+# 🧩 Procurar resposta contextual
+# =====================================================
+def procurar_resposta_contextual(pergunta: str, historico_user: list, limite_conf: float = 0.65):
+    """Procura respostas semelhantes tendo em conta o histórico do utilizador."""
+    try:
+        contexto = " ".join(historico_user[-3:]) if historico_user else ""
+        entrada = f"{contexto} {pergunta}"
+        vector = model.encode(entrada).tolist()
+
+        resultados = client.search(
+            collection_name=COLLECTION,
+            query_vector=vector,
+            limit=5,
+        )
+
+        if not resultados:
+            return None
+
+        for r in resultados:
+            if r.score >= limite_conf:
+                return r.payload.get("resposta")
+
+        return None
+
+    except Exception as e:
+        print(f"⚠️ Erro ao procurar resposta contextual: {e}")
+        return None
+
+# =====================================================
+# 🧭 Identificar intenção (com base no dataset)
+# =====================================================
+def identificar_intencao(pergunta: str):
+    """Verifica se a pergunta tem intenção reconhecida no dataset base."""
+    try:
+        vector = model.encode(pergunta).tolist()
+        resultados = client.search(
+            collection_name=COLLECTION,
+            query_vector=vector,
+            limit=3,
+        )
+
+        if not resultados:
+            return None
+
+        melhor = resultados[0]
+        if melhor.score > 0.75:
+            tema = (
+                melhor.payload.get("contexto", {}).get("tema")
+                if "contexto" in melhor.payload
+                else None
+            )
+            return tema
+        return None
+
+    except Exception as e:
+        print(f"⚠️ Erro ao identificar intenção: {e}")
+        return None
+
+# =====================================================
+# 🧹 Função de limpeza (opcional)
+# =====================================================
+def limpar_qdrant():
+    """Limpa toda a coleção (usar com cuidado)."""
+    try:
+        client.delete_collection(collection_name=COLLECTION)
+        print("🧹 Coleção apagada com sucesso.")
+    except Exception as e:
+        print(f"⚠️ Erro ao apagar coleção: {e}")
