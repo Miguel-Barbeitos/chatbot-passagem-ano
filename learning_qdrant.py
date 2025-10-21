@@ -4,7 +4,7 @@ import random
 import numpy as np
 from sentence_transformers import SentenceTransformer, util
 from qdrant_client import QdrantClient, models
-import zipfile, tarfile
+import zipfile, tarfile, shutil
 
 # =====================================================
 # ⚙️ CONFIGURAÇÃO GERAL
@@ -37,8 +37,7 @@ def inicializar_qdrant():
         client = QdrantClient(path=QDRANT_PATH)
     except RuntimeError:
         print("⚠️ Base corrompida — recriando diretório...")
-        import shutil
-        shutil.rmtree(QDRANT_PATH)
+        shutil.rmtree(QDRANT_PATH, ignore_errors=True)
         os.makedirs(QDRANT_PATH, exist_ok=True)
         client = QdrantClient(path=QDRANT_PATH)
 
@@ -46,9 +45,7 @@ def inicializar_qdrant():
     if COLLECTION_NAME not in collections:
         client.create_collection(
             collection_name=COLLECTION_NAME,
-            vectors_config={
-                "default": models.VectorParams(size=768, distance=models.Distance.COSINE)
-            }
+            vectors_config=models.VectorParams(size=768, distance=models.Distance.COSINE)
         )
         print("✨ Nova coleção criada!")
     return client
@@ -144,9 +141,7 @@ def limpar_qdrant():
         print("🧹 Coleção Qdrant apagada.")
         client.create_collection(
             collection_name=COLLECTION_NAME,
-            vectors_config={
-                "default": models.VectorParams(size=768, distance=models.Distance.COSINE)
-            }
+            vectors_config=models.VectorParams(size=768, distance=models.Distance.COSINE)
         )
         print("✨ Nova coleção criada.")
     except Exception as e:
