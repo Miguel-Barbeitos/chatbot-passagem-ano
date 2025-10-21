@@ -1,44 +1,113 @@
-import random
+﻿import os, random
 from qdrant_client import QdrantClient, models
 from sentence_transformers import SentenceTransformer
 
-# Inicializa��o
-client = QdrantClient(":memory:")  # usa base em mem�ria (sem servidor externo)
-collection_name = "chat_history"
-model = SentenceTransformer("all-MiniLM-L6-v2")
+# =====================================================
+# ⚙️ Configuração inicial do modelo e base vetorial
+# =====================================================
 
-# Cria a cole��o se n�o existir
-client.recreate_collection(
-    collection_name=collection_name,
-    vectors_config=models.VectorParams(size=384, distance=models.Distance.COSINE)
-)
+# Modelo leve e gratuito da Hugging Face
+model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
-def guardar_mensagem(user, pergunta, resposta):
-    """Guarda a pergunta e resposta no Qdrant com embedding."""
-    try:
-        # Gerar embedding (vector)
-        vector = model.encode(pergunta).tolist()
+# Cria ou liga à base local do Qdrant
+qdrant_path = "./data/qdrant_db"
+os.makedirs(qdrant_path, exist_ok=True)
+client = QdrantClient(path=qdrant_path)
 
-        # Inserir ponto no Qdrant
-        points = [
+# =====================================================
+# 🧩 Criação da coleção se ainda não existir
+# =====================================================
+if "mensagens" not in [c.name for c in client.get_collections().collections]:
+    client.create_collection(
+        collection_name="mensagens",
+        vectors_config=models.VectorParams(size=384, distance=models.Distance.COSINE)
+    )
+
+# =====================================================
+# 💾 Guardar mensagem (pergunta + resposta)
+# =====================================================
+def guardar_mensagem(nome, pergunta, resposta):
+    """Guarda a pergunta e resposta do utilizador no Qdrant."""
+    if not pergunta.strip():
+        return
+    vector = model.encode(pergunta).tolist()
+
+    client.upsert(
+        collection_name="mensagens",
+        points=[
             models.PointStruct(
-                id=random.randint(0, int(1e9)),
+                id=random.randint(1, 1_000_000_000),
                 vector=vector,
-                payload={"user": user, "pergunta": pergunta, "resposta": resposta}
+                payload={"nome": nome, "pergunta": pergunta, "resposta": resposta}
             )
         ]
-        client.upsert(collection_name=collection_name, points=points)
+    )
 
-    except Exception as e:
-        print(f"[ERRO guardar_mensagem] {e}")
+# =====================================================
+# 🔍 Pesquisa semântica simples
+# =====================================================
+def procurar_resposta_semelhante(pergunta, top_k=3):
+    """Pesquisa uma resposta semelhante no Qdrant."""
+    if not pergunta.strip():
+        return None
+    vector = model.encode(pergunta).tolist()
 
-def procurar_resposta_semelhante(pergunta, limite=0.8):
-    """Procura respostas semelhantes no Qdrant."""
-    try:
-        vector = model.encode(pergunta).tolist()
-        resultados = client.search(collection_name=collection_name, query_vector=vector, limit=1)
-        if resultados and resultados[0].score >= limite:
-            return resultados[0].payload["resposta"]
-    except Exception as e:
-        print(f"[ERRO procurar_resposta_semelhante] {e}")
-    return None
+    res = client.search(
+        collection_name="mensagens",
+        query_vector=vector,
+        limit=top_k
+    )
+
+    if not res:
+        return None
+
+    melhor = res[0]
+    if melhor.score < 0.65:
+        return None
+
+    return melhor.payload.get("resposta", None)
+
+# =====================================================
+# 🔍 Pesquisa semântica com contexto
+# =====================================================
+def procurar_resposta_contextual(pergunta, historico, top_k=3):
+    """
+    Pesquisa no Qdrant tendo em conta o contexto da conversa.
+    Junta o embedding da pergunta com o das últimas mensagens do utilizador.
+    """
+    if not pergunta.strip():
+        return None
+
+    vec_pergunta = model.encode(pergunta).tolist()
+
+    # Se houver histórico, cria embedding médio do contexto
+    if historico:
+        texto_contexto = " ".join(historico[-5:])  # últimas 5 mensagens
+        vec_historico = model.encode(texto_contexto).tolist()
+        # Combinação simples: média dos vetores
+        vec_contexto = [(a + b) / 2 for a, b in zip(vec_pergunta, vec_historico)]
+    else:
+        vec_contexto = vec_pergunta
+
+    res = client.search(
+        collection_name="mensagens",
+        query_vector=vec_contexto,
+        limit=top_k
+    )
+
+    if not res:
+        return None
+
+    melhor = res[0]
+    if melhor.score < 0.65:
+        return None
+
+    return melhor.payload.get("resposta", None)
+
+# =====================================================
+# 🧹 Limpeza e gestão
+# =====================================================
+def limpar_mensagens():
+    """Apaga todas as mensagens guardadas (reset da base)."""
+    client.delete(collection_name="mensagens", points_selector=models.FilterSelector())
+    print("🧹 Base de dados de mensagens limpa com sucesso!")

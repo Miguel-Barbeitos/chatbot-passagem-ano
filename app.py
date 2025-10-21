@@ -118,7 +118,8 @@ def gerar_resposta(pergunta, perfil):
             return resposta
 
     # 3️⃣ Memória semântica (Qdrant)
-    resposta_semelhante = procurar_resposta_semelhante(pergunta_l)
+    historico_user = [msg for role, msg in st.session_state.chat_history if role == "user"]
+    resposta_semelhante = procurar_resposta_contextual(pergunta_l, historico_user)
     if resposta_semelhante:
         return f"Já me perguntaste algo parecido 😄 {resposta_semelhante}"
 
