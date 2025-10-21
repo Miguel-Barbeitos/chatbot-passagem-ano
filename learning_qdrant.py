@@ -10,9 +10,7 @@ from sentence_transformers import SentenceTransformer
 model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
 # Cria ou liga à base local do Qdrant
-qdrant_path = "./data/qdrant_db"
-os.makedirs(qdrant_path, exist_ok=True)
-client = QdrantClient(path=qdrant_path)
+client = QdrantClient(":memory:")  # usa base em RAM (volátil)
 
 # =====================================================
 # 🧩 Criação da coleção se ainda não existir
@@ -103,6 +101,39 @@ def procurar_resposta_contextual(pergunta, historico, top_k=3):
         return None
 
     return melhor.payload.get("resposta", None)
+
+def identificar_intencao(pergunta):
+    """Classifica a intenção da pergunta com base em embeddings e intenções pré-definidas."""
+    import json
+
+    if not os.path.exists("intencoes.json"):
+        return None
+
+    with open("intencoes.json", encoding="utf-8") as f:
+        intencoes = json.load(f)
+
+    # Embedding da pergunta
+    vec_pergunta = model.encode(pergunta).tolist()
+
+    melhor_intencao = None
+    melhor_score = 0.0
+
+    for categoria, exemplos in intencoes.items():
+        for exemplo in exemplos:
+            vec_exemplo = model.encode(exemplo).tolist()
+            # cálculo simples de similaridade (cosseno)
+            dot = sum(a*b for a, b in zip(vec_pergunta, vec_exemplo))
+            norm1 = sum(a*a for a in vec_pergunta) ** 0.5
+            norm2 = sum(b*b for b in vec_exemplo) ** 0.5
+            sim = dot / (norm1 * norm2)
+            if sim > melhor_score:
+                melhor_score = sim
+                melhor_intencao = categoria
+
+    if melhor_score > 0.60:
+        return melhor_intencao
+    return None
+
 
 # =====================================================
 # 🧹 Limpeza e gestão
