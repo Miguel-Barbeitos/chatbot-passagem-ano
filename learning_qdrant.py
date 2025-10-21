@@ -1,20 +1,20 @@
-﻿import os, random
+﻿import os
+import random
 from qdrant_client import QdrantClient, models
 from sentence_transformers import SentenceTransformer
+import json
 
 # =====================================================
-# ⚙️ Configuração inicial do modelo e base vetorial
+# ⚙️ Inicialização do modelo e base vetorial
 # =====================================================
 
-# Modelo leve e gratuito da Hugging Face
+# Modelo semântico (gratuito e leve)
 model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
-# Cria ou liga à base local do Qdrant
-client = QdrantClient(":memory:")  # usa base em RAM (volátil)
+# Base Qdrant em memória (compatível com Streamlit Cloud)
+client = QdrantClient(":memory:")
 
-# =====================================================
-# 🧩 Criação da coleção se ainda não existir
-# =====================================================
+# Criação da coleção, se ainda não existir
 if "mensagens" not in [c.name for c in client.get_collections().collections]:
     client.create_collection(
         collection_name="mensagens",
@@ -22,7 +22,7 @@ if "mensagens" not in [c.name for c in client.get_collections().collections]:
     )
 
 # =====================================================
-# 💾 Guardar mensagem (pergunta + resposta)
+# 💾 Guardar mensagens
 # =====================================================
 def guardar_mensagem(nome, pergunta, resposta):
     """Guarda a pergunta e resposta do utilizador no Qdrant."""
@@ -42,7 +42,7 @@ def guardar_mensagem(nome, pergunta, resposta):
     )
 
 # =====================================================
-# 🔍 Pesquisa semântica simples
+# 🔍 Pesquisa simples
 # =====================================================
 def procurar_resposta_semelhante(pergunta, top_k=3):
     """Pesquisa uma resposta semelhante no Qdrant."""
@@ -66,11 +66,11 @@ def procurar_resposta_semelhante(pergunta, top_k=3):
     return melhor.payload.get("resposta", None)
 
 # =====================================================
-# 🔍 Pesquisa semântica com contexto
+# 🔍 Pesquisa com contexto
 # =====================================================
 def procurar_resposta_contextual(pergunta, historico, top_k=3):
     """
-    Pesquisa no Qdrant tendo em conta o contexto da conversa.
+    Pesquisa no Qdrant com base no contexto da conversa.
     Junta o embedding da pergunta com o das últimas mensagens do utilizador.
     """
     if not pergunta.strip():
@@ -78,11 +78,9 @@ def procurar_resposta_contextual(pergunta, historico, top_k=3):
 
     vec_pergunta = model.encode(pergunta).tolist()
 
-    # Se houver histórico, cria embedding médio do contexto
     if historico:
-        texto_contexto = " ".join(historico[-5:])  # últimas 5 mensagens
+        texto_contexto = " ".join(historico[-5:])
         vec_historico = model.encode(texto_contexto).tolist()
-        # Combinação simples: média dos vetores
         vec_contexto = [(a + b) / 2 for a, b in zip(vec_pergunta, vec_historico)]
     else:
         vec_contexto = vec_pergunta
@@ -102,33 +100,37 @@ def procurar_resposta_contextual(pergunta, historico, top_k=3):
 
     return melhor.payload.get("resposta", None)
 
+# =====================================================
+# 🧠 Deteção de intenção
+# =====================================================
 def identificar_intencao(pergunta):
-    """Classifica a intenção da pergunta com base em embeddings e intenções pré-definidas."""
-    import json
-
+    """
+    Classifica a intenção da pergunta (ex: música, comida, bebida, fogo, etc.)
+    com base em embeddings e intenções pré-definidas.
+    """
     if not os.path.exists("intencoes.json"):
         return None
 
+    # Tenta ler com UTF-8 e fallback para Latin-1
     try:
-    with open("intencoes.json", encoding="utf-8") as f:
-        intencoes = json.load(f)
-except UnicodeDecodeError:
-    with open("intencoes.json", encoding="latin-1") as f:
-        intencoes = json.load(f)
+        with open("intencoes.json", encoding="utf-8") as f:
+            intencoes = json.load(f)
+    except UnicodeDecodeError:
+        with open("intencoes.json", encoding="latin-1") as f:
+            intencoes = json.load(f)
 
-    # Embedding da pergunta
     vec_pergunta = model.encode(pergunta).tolist()
 
     melhor_intencao = None
     melhor_score = 0.0
 
+    # Calcula similaridade com cada exemplo
     for categoria, exemplos in intencoes.items():
         for exemplo in exemplos:
             vec_exemplo = model.encode(exemplo).tolist()
-            # cálculo simples de similaridade (cosseno)
-            dot = sum(a*b for a, b in zip(vec_pergunta, vec_exemplo))
-            norm1 = sum(a*a for a in vec_pergunta) ** 0.5
-            norm2 = sum(b*b for b in vec_exemplo) ** 0.5
+            dot = sum(a * b for a, b in zip(vec_pergunta, vec_exemplo))
+            norm1 = sum(a * a for a in vec_pergunta) ** 0.5
+            norm2 = sum(b * b for b in vec_exemplo) ** 0.5
             sim = dot / (norm1 * norm2)
             if sim > melhor_score:
                 melhor_score = sim
@@ -138,11 +140,10 @@ except UnicodeDecodeError:
         return melhor_intencao
     return None
 
-
 # =====================================================
-# 🧹 Limpeza e gestão
+# 🧹 Limpeza da base
 # =====================================================
 def limpar_mensagens():
-    """Apaga todas as mensagens guardadas (reset da base)."""
+    """Apaga todas as mensagens guardadas (reset)."""
     client.delete(collection_name="mensagens", points_selector=models.FilterSelector())
     print("🧹 Base de dados de mensagens limpa com sucesso!")
