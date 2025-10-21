@@ -14,9 +14,9 @@ def guardar_mensagem(user, texto, resposta):
     embedding = model.encode(texto).tolist()
     qdrant.upsert(
         collection_name="mensagens",
-        points=[models.PointStruct(id=random.randint(0, 1e9),
-                                   vector=embedding,
-                                   payload={"user": user, "texto": texto, "resposta": resposta})]
+        points=[models.PointStruct(id=random.randint(0, int(1e9)),
+                           vector=vector,
+                           payload={"user": user, "pergunta": pergunta, "resposta": resposta})]
     )
 
 def procurar_resposta_semelhante(texto, limiar=0.85):
