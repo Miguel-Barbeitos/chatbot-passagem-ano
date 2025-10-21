@@ -64,17 +64,7 @@ st.success(f"{saud}, {nome}! 👋 Bem-vindo ao Assistente da Passagem de Ano!")
 def gerar_resposta(pergunta, perfil):
     pergunta_l = pergunta.lower()
 
-    # 1️⃣ Verifica memória local (aprendizagem simples)
-    resposta_memorizada = procurar_resposta_memorizada(pergunta_l)
-    if resposta_memorizada:
-        return f"Lembro-me disso! 😉 {resposta_memorizada}"
-
-    # 2️⃣ Verifica memória semântica (Qdrant)
-    resposta_semelhante = procurar_resposta_semelhante(pergunta_l)
-    if resposta_semelhante:
-        return f"Já me perguntaste algo parecido 😄 {resposta_semelhante}"
-
-    # 3️⃣ Caso contrário, aplica regras básicas
+    # 1️⃣ Regras prioritárias — Identidade, Wi-Fi, etc.
     if any(p in pergunta_l for p in ["como te chamas", "quem es tu", "quem és tu", "qual é o teu nome", "como te devo chamar", "teu nome", "te chamas"]):
         respostas_nome = [
             "Sou o Diácono Remédios, ao vosso serviço 🙏😄",
@@ -84,8 +74,22 @@ def gerar_resposta(pergunta, perfil):
             "Sou o Diácono Remédios, receitando gargalhadas grátis — sem contraindicações! 😂",
         ]
         resposta = random.choice(respostas_nome)
+        guardar_mensagem(perfil["nome"], pergunta, resposta)
+        atualizar_memoria(pergunta, resposta)
+        return resposta
 
-    elif any(w in pergunta_l for w in ["wifi", "wi-fi", "wi fi", "internet", "rede"]):
+    # 2️⃣ Memória semântica (só se não for regra)
+    resposta_semelhante = procurar_resposta_semelhante(pergunta_l)
+    if resposta_semelhante:
+        return f"Já me perguntaste algo parecido 😄 {resposta_semelhante}"
+
+    # 3️⃣ Memória local (só se não for regra nem semântica)
+    resposta_memorizada = procurar_resposta_memorizada(pergunta_l)
+    if resposta_memorizada:
+        return f"Lembro-me disso! 😉 {resposta_memorizada}"
+
+    # 4️⃣ Outras regras (Wi-Fi, local, hora, roupa, etc.)
+    if any(w in pergunta_l for w in ["wifi", "wi-fi", "wi fi", "internet", "rede"]):
         resposta = f"A senha do Wi-Fi é **{event.get('wifi', 'CasaDoMiguel2025')}** 😉"
 
     elif any(w in pergunta_l for w in ["onde", "local", "morada", "sitio", "localização", "fica longe"]):
@@ -104,11 +108,10 @@ def gerar_resposta(pergunta, perfil):
             "Não revelo tudo, mas vai ser memorável 🎆"
         ])
 
-    # 4️⃣ Guarda conhecimento nas memórias
     guardar_mensagem(perfil["nome"], pergunta, resposta)
     atualizar_memoria(pergunta, resposta)
-
     return resposta
+
 
 # =====================================================
 # 💬 Interface do chat
