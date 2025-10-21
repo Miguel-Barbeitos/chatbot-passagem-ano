@@ -1,8 +1,19 @@
-﻿import os
+﻿import os, tarfile, zipfile
 import json
 import random
 from sentence_transformers import SentenceTransformer
 from qdrant_client import QdrantClient, models
+
+# --- Auto-extração da base Qdrant no arranque ---
+if not os.path.exists("qdrant_data"):
+    if os.path.exists("qdrant_data.zip"):
+        print("📦 A extrair base Qdrant (zip)...")
+        with zipfile.ZipFile("qdrant_data.zip", "r") as zip_ref:
+            zip_ref.extractall()
+    elif os.path.exists("qdrant_data.tar.gz"):
+        print("📦 A extrair base Qdrant (tar.gz)...")
+        with tarfile.open("qdrant_data.tar.gz", "r:gz") as tar:
+            tar.extractall()
 
 QDRANT_PATH = "qdrant_data"
 COLLECTION_NAME = "chatbot_passagem_ano"
@@ -21,7 +32,7 @@ def inicializar_qdrant():
     except RuntimeError:
         print("⚠️ Base Qdrant corrompida — recriando…")
         import shutil
-        shutil.rmtree(QDRANT_PATH)
+        shutil.rmtree(QDRANT_PATH, ignore_errors=True)
         os.makedirs(QDRANT_PATH, exist_ok=True)
         client = QdrantClient(path=QDRANT_PATH)
 
@@ -30,9 +41,13 @@ def inicializar_qdrant():
         client.create_collection(
             collection_name=COLLECTION_NAME,
             vectors_config={
-        "default": models.VectorParams(size=768, distance=models.Distance.COSINE)
-    }
-        print("✅ Nova coleção criada com sucesso!")
+                "default": models.VectorParams(
+                    size=768,
+                    distance=models.Distance.COSINE
+                )
+            }
+        )
+        print(f"✅ Nova coleção '{COLLECTION_NAME}' criada com sucesso!")
     return client
 
 client = inicializar_qdrant()
