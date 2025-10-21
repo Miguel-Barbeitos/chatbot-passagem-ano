@@ -32,10 +32,9 @@ def normalizar(txt: str) -> str:
     return t
 
 # =====================================================
-# 📄 Dados
+# 📄 Dados iniciais (apenas perfis)
 # =====================================================
 profiles = carregar_json("profiles.json")
-event = carregar_json("event.json")
 
 # =====================================================
 # 🧍 Identificação do utilizador
@@ -76,6 +75,7 @@ st.success(f"{saud}, {nome}! 👋 Bem-vindo ao Assistente da Passagem de Ano!")
 # =====================================================
 def gerar_resposta(pergunta, perfil):
     pergunta_l = normalizar(pergunta)
+    event = carregar_json("event.json")  # 🔁 lê sempre a versão mais recente
 
     # 0️⃣ Cumprimentos simples
     if any(w in pergunta_l for w in ["ola", "boa tarde", "boa noite", "bom dia", "boas"]):
@@ -115,11 +115,21 @@ def gerar_resposta(pergunta, perfil):
         return f"Lembro-me disso! 😉 {resposta_memorizada}"
 
     # 4️⃣ Regras gerais
-    if any(w in pergunta_l for w in ["wifi", "wi fi", "wi fi", "internet", "rede"]):
+    if any(w in pergunta_l for w in ["wifi", "wi fi", "wi-fi", "internet", "rede"]):
         resposta = f"A senha do Wi-Fi é **{event.get('wifi', 'CasaDoMiguel2025')}** 😉"
 
-    elif any(w in pergunta_l for w in ["onde", "local", "morada", "sitio", "localizacao", "fica longe"]):
-        resposta = f"A festa vai ser em **{event.get('local', 'Porto')}** 🎆"
+    elif any(w in pergunta_l for w in [
+        "onde", "local", "morada", "sitio", "localizacao",
+        "fica longe", "e longe", "é longe", "fica perto", "demora",
+        "distancia", "demorar", "longe", "perto"
+    ]):
+        local = event.get("local", "Porto")
+        resposta = random.choice([
+            f"A festa vai ser em **{local}** 🎆",
+            f"Não é longe não, {perfil['nome']}! É em {local}. Dá perfeitamente para ir e voltar sem dramas 🚗😉",
+            f"Fica em {local} — aposto que até vais cantar no caminho 🎶",
+            f"É em {local}, {perfil['nome']}! Se fores a pé, já chegas aquecido para a festa 😄"
+        ])
 
     elif any(w in pergunta_l for w in ["hora", "quando", "a que horas", "comeca", "começa"]):
         resposta = f"Começa às **{event.get('hora', '21h00')}** — não faltes! 🕺"
