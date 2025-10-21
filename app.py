@@ -1,32 +1,19 @@
 import streamlit as st
 import json, random, os, time, re, unicodedata
 from datetime import datetime
-from learning_qdrant import (
-    guardar_mensagem,
-    procurar_resposta_semelhante,
-    procurar_resposta_contextual,
-    identificar_intencao
-)
-from learning_memory import atualizar_memoria, procurar_resposta_memorizada
+from learning_qdrant import guardar_mensagem, procurar_resposta_semelhante
 
 # =====================================================
-# ⚙️ Configuração inicial
+# ⚙️ Configuração
 # =====================================================
-st.set_page_config(page_title="🎉 Diácono Remédios - Chatbot 🎆", page_icon="🎆")
+st.set_page_config(page_title="🎉 Chatbot 🎆", page_icon="🎆")
 st.title("🎉 Assistente da Passagem de Ano 2025/2026 🎆")
 
 # =====================================================
-# 📂 Utilitários
+# 🔧 Utilitários
 # =====================================================
-def carregar_json(path):
-    """Carrega ficheiros JSON com segurança."""
-    if os.path.exists(path):
-        with open(path, encoding="utf-8") as f:
-            return json.load(f)
-    return {}
-
 def normalizar(txt: str) -> str:
-    """Converte texto para minúsculas e remove acentos e pontuação."""
+    """Minúsculas, remover acentos, pontuação e espaços duplicados."""
     if not isinstance(txt, str):
         return ""
     t = txt.lower().strip()
@@ -36,20 +23,23 @@ def normalizar(txt: str) -> str:
     t = re.sub(r"\s+", " ", t).strip()
     return t
 
+def carregar_json(path):
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
 # =====================================================
-# 📄 Dados iniciais
+# 📂 Dados
 # =====================================================
 profiles = carregar_json("profiles.json")
+event = carregar_json("event.json")
 
 # =====================================================
-# 🧍 Identificação do utilizador
+# 🧍 Identificação
 # =====================================================
-try:
-    params = st.query_params  # versões novas (>= 1.39)
-except AttributeError:
-    params = st.experimental_get_query_params()  # versões antigas
-
 nomes = [p["nome"] for p in profiles]
+params = st.query_params
 
 if "user" not in st.session_state:
     if "user" in params and params["user"] in nomes:
@@ -58,10 +48,7 @@ if "user" not in st.session_state:
         nome_sel = st.selectbox("Quem és tu?", nomes)
         if st.button("Confirmar"):
             st.session_state["user"] = nome_sel
-            try:
-                st.query_params["user"] = nome_sel
-            except AttributeError:
-                st.experimental_set_query_params(user=nome_sel)
+            st.query_params["user"] = nome_sel
             st.rerun()
         st.stop()
 
@@ -76,153 +63,85 @@ saud = "Bom dia" if hora < 12 else "Boa tarde" if hora < 20 else "Boa noite"
 st.success(f"{saud}, {nome}! 👋 Bem-vindo ao Assistente da Passagem de Ano!")
 
 # =====================================================
-# 🧠 Função principal de geração de resposta
-# =====================================================
-def gerar_resposta(pergunta, perfil):
-    pergunta_l = normalizar(pergunta)
-    event = carregar_json("event.json")  # lê sempre a versão mais recente
-
-    # Histórico do utilizador para contexto
-    historico_user = [msg for role, msg in st.session_state.chat_history if role == "user"]
-
-    # 0️⃣ Cumprimentos simples
-    if any(w in pergunta_l for w in ["ola", "boa tarde", "boa noite", "bom dia", "boas"]):
-        respostas_cumprimentos = [
-            f"Olá, {perfil['nome']}! 😄 Pronto para uma passagem de ano épica?",
-            f"Boas, {perfil['nome']}! Preparado para dançar até cair? 💃🕺",
-            f"Olá, {perfil['nome']}! O Diácono Remédios está ao seu dispor 🙏✨",
-            f"Olá, {perfil['nome']}! Espero que tragas boa disposição 🍾",
-        ]
-        resposta = random.choice(respostas_cumprimentos)
-        guardar_mensagem(perfil["nome"], pergunta, resposta)
-        atualizar_memoria(pergunta, resposta)
-        return resposta
-
-    # 1️⃣ Identidade
-    if any(p in pergunta_l for p in ["como te chamas", "quem es tu", "quem es", "qual e o teu nome", "como te devo chamar", "teu nome", "te chamas"]):
-        respostas_nome = [
-            "Sou o Diácono Remédios, ao vosso serviço 🙏😄",
-            "Chamam-me Diácono Remédios — e trago boa disposição! 😎",
-            "Sou o Diácono Remédios, o assistente oficial da festa 🎉",
-            "Diácono Remédios, para o servir com graça e alegria! ✨",
-            "Sou o Diácono Remédios, receitando gargalhadas grátis — sem contraindicações! 😂",
-        ]
-        resposta = random.choice(respostas_nome)
-        guardar_mensagem(perfil["nome"], pergunta, resposta)
-        atualizar_memoria(pergunta, resposta)
-        return resposta
-
-    # 2️⃣ Deteção de intenção (usando embeddings)
-    intencao = identificar_intencao(pergunta_l)
-    if intencao == "musica":
-        resposta = random.choice([
-            "Claro que sim! 🎶 Vai haver música até o sol nascer!",
-            "DJ confirmado, {perfil['nome']}! Prepara-te para dançar 💃🕺",
-            "Vai haver música boa — e talvez uns passos de dança do Diácono! 😄"
-        ])
-        guardar_mensagem(perfil["nome"], pergunta, resposta)
-        atualizar_memoria(pergunta, resposta)
-        return resposta
-
-    if intencao == "comida":
-        resposta = random.choice([
-            "Vai haver petiscos deliciosos 🍤, sobremesas e boa companhia!",
-            "Comida não vai faltar, {perfil['nome']} — o estômago também merece festa 😋"
-        ])
-        guardar_mensagem(perfil["nome"], pergunta, resposta)
-        atualizar_memoria(pergunta, resposta)
-        return resposta
-
-    if intencao == "bebida":
-        resposta = random.choice([
-            "O bar vai estar aberto 🍻 — com cerveja gelada e vinho à escolha!",
-            "Vai ter bebidas para todos os gostos, até água benta se pedires 😇"
-        ])
-        guardar_mensagem(perfil["nome"], pergunta, resposta)
-        atualizar_memoria(pergunta, resposta)
-        return resposta
-
-    if intencao == "fogo":
-        resposta = random.choice([
-            "Claro que vai haver fogo de artifício! 🎆🎇",
-            "Vai haver fogo sim, {perfil['nome']} — e o céu vai brilhar tanto quanto tu 😎"
-        ])
-        guardar_mensagem(perfil["nome"], pergunta, resposta)
-        atualizar_memoria(pergunta, resposta)
-        return resposta
-
-    # 3️⃣ Comparação de locais (ex: Porto vs Algarve)
-    if any(cidade in pergunta_l for cidade in ["porto", "lisboa", "algarve", "coimbra", "braga", "aveiro", "faro", "guimaraes"]):
-        locais_encontrados = [cidade for cidade in ["porto", "lisboa", "algarve", "coimbra", "braga", "aveiro", "faro", "guimaraes"] if cidade in pergunta_l]
-        if len(locais_encontrados) >= 2:
-            resposta = random.choice([
-                f"Bem... depende de quantas paragens fizeres pelo caminho 😄 {locais_encontrados[0].capitalize()} e {locais_encontrados[1].capitalize()} ficam a umas boas horas de carro 🚗",
-                f"{locais_encontrados[0].capitalize()} e {locais_encontrados[1].capitalize()}? Dá tempo para ouvir umas boas playlists no caminho 🎶",
-                f"Entre {locais_encontrados[0].capitalize()} e {locais_encontrados[1].capitalize()} são umas horitas, mas nada que uma boa conversa e música não resolvam 😉"
-            ])
-            guardar_mensagem(perfil["nome"], pergunta, resposta)
-            atualizar_memoria(pergunta, resposta)
-            return resposta
-
-    # 4️⃣ Memória contextual (Qdrant)
-    resposta_semelhante = procurar_resposta_contextual(pergunta_l, historico_user)
-    if resposta_semelhante:
-        return f"Já me perguntaste algo parecido 😄 {resposta_semelhante}"
-
-    # 5️⃣ Memória local
-    resposta_memorizada = procurar_resposta_memorizada(pergunta_l)
-    if resposta_memorizada:
-        return f"Lembro-me disso! 😉 {resposta_memorizada}"
-
-    # 6️⃣ Regras gerais
-    if any(w in pergunta_l for w in ["wifi", "wi fi", "wi-fi", "internet", "rede"]):
-        resposta = f"A senha do Wi-Fi é **{event.get('wifi', 'CasaDoMiguel2025')}** 😉"
-
-    elif any(w in pergunta_l for w in [
-        "onde", "local", "morada", "sitio", "localizacao",
-        "fica longe", "e longe", "é longe", "fica perto", "demora",
-        "distancia", "demorar", "longe", "perto"
-    ]):
-        local = event.get("local", "Porto")
-        resposta = random.choice([
-            f"A festa vai ser em **{local}** 🎆",
-            f"Não é longe não, {perfil['nome']}! É em {local}. Dá perfeitamente para ir e voltar sem dramas 🚗😉",
-            f"Fica em {local} — aposto que até vais cantar no caminho 🎶",
-            f"É em {local}, {perfil['nome']}! Se fores a pé, já chegas aquecido para a festa 😄"
-        ])
-
-    elif any(w in pergunta_l for w in ["hora", "quando", "a que horas", "comeca", "começa"]):
-        resposta = f"Começa às **{event.get('hora', '21h00')}** — não faltes! 🕺"
-
-    elif any(w in pergunta_l for w in ["roupa", "dress", "vestir", "codigo", "cor", "amarelo"]):
-        resposta = f"O dress code é **{event.get('dress_code', 'casual elegante')}**, e a cor deste ano é **amarelo 💛**."
-
-    else:
-        resposta = random.choice([
-            "Vai ser uma noite épica 🎉",
-            "Só posso dizer que vai haver surpresas 😉",
-            "Não revelo tudo, mas vai ser memorável 🎆"
-        ])
-
-    guardar_mensagem(perfil["nome"], pergunta, resposta)
-    atualizar_memoria(pergunta, resposta)
-    return resposta
-
-# =====================================================
-# 💬 Interface do Chat
+# 💬 Interface
 # =====================================================
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
 prompt = st.chat_input("Escreve aqui a tua mensagem 👇")
 
+# =====================================================
+# 🧠 Geração de resposta
+# =====================================================
+def gerar_resposta(pergunta, perfil):
+    pergunta_l = normalizar(pergunta)
+
+    # 1️⃣ — Procurar respostas no Qdrant (inteligência vetorial)
+    resposta_memoria = procurar_resposta_semelhante(pergunta_l, limite_conf=0.7, top_k=3)
+    if resposta_memoria:
+        guardar_mensagem(perfil["nome"], pergunta_l, resposta_memoria, perfil)
+        return ajustar_tom_por_perfil(resposta_memoria, perfil)
+
+    # 2️⃣ — Regras básicas (fallback)
+    if any(p in pergunta_l for p in ["como te chamas", "quem es tu", "qual e o teu nome", "te chamas"]):
+        return ajustar_tom_por_perfil("Sou o Diácono Remédios, ao vosso serviço 🙏😄", perfil)
+
+    if any(p in pergunta_l for p in ["onde", "local", "sitio", "morada", "porto", "fica longe"]):
+        local = event.get("local", "Casa do Miguel, Porto")
+        return ajustar_tom_por_perfil(f"A festa vai ser em **{local}** 🎉", perfil)
+
+    if any(p in pergunta_l for p in ["hora", "quando", "que horas", "a que horas"]):
+        return ajustar_tom_por_perfil(f"Começa às **{event.get('hora', '21h00')}** — e promete durar até ao nascer do sol 🌅", perfil)
+
+    if any(p in pergunta_l for p in ["wifi", "wi fi", "internet", "rede"]):
+        return ajustar_tom_por_perfil(f"A senha do Wi-Fi é **{event.get('wifi', 'CasaDoMiguel2025')}** 📶", perfil)
+
+    if any(p in pergunta_l for p in ["dress", "roupa", "vestir", "codigo", "cor", "amarelo"]):
+        return ajustar_tom_por_perfil(
+            f"O dress code é **{event.get('dress_code', 'casual elegante')}**, e a cor deste ano é **amarelo 💛**.", perfil
+        )
+
+    respostas_default = [
+        "Vai ser uma noite épica 🎉",
+        "Só posso dizer que vai haver surpresas 😉",
+        "Não revelo tudo, mas vai ser memorável 🎆"
+    ]
+    resposta = random.choice(respostas_default)
+    guardar_mensagem(perfil["nome"], pergunta_l, resposta, perfil)
+    return ajustar_tom_por_perfil(resposta, perfil)
+
+# =====================================================
+# 🎭 Ajustar o tom conforme o perfil
+# =====================================================
+def ajustar_tom_por_perfil(resposta, perfil):
+    tipo = perfil.get("personalidade", "neutro").lower()
+
+    humor_extra = {
+        "divertido": ["😂", "😎", "🎉", "😉", "O Diácono aprova! 🙌", "Que comece a festa! 🥳"],
+        "extrovertido": ["🔥", "💃🕺", "😄", "Isso vai ser épico!", "O DJ já sabe o teu nome 😜"],
+        "sério": ["Entendido.", "Percebo.", "Certo.", "👍"],
+        "formal": ["Com os meus melhores cumprimentos.", "Será um prazer recebê-lo.", "Tenha uma excelente noite."],
+        "sarcastico": ["Ah pois claro… 🙃", "Pergunta retórica ou quer mesmo saber? 😏", "Com tanto suspense, parece novela das 9 😅"],
+        "calmo": ["Tudo tranquilo, sem stress. ✨", "Vai correr tudo bem. 🌙", "Mantém o espírito leve. 🕊️"]
+    }
+
+    if tipo in humor_extra:
+        extra = random.choice(humor_extra[tipo])
+        resposta = f"{resposta} {extra}"
+
+    return resposta
+
+# =====================================================
+# 💬 Ciclo da conversa
+# =====================================================
 if prompt:
     st.session_state.chat_history.append(("user", prompt))
     with st.spinner("💭 O Diácono está a pensar..."):
-        time.sleep(0.7)
+        time.sleep(0.8)
         resposta = gerar_resposta(prompt, perfil)
     st.session_state.chat_history.append(("bot", resposta))
 
+# Mostrar conversa
 for role, msg in st.session_state.chat_history:
     if role == "user":
         st.markdown(f"**{nome}:** {msg}")
