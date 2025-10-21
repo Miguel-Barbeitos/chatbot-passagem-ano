@@ -109,7 +109,11 @@ def identificar_intencao(pergunta):
     if not os.path.exists("intencoes.json"):
         return None
 
+    try:
     with open("intencoes.json", encoding="utf-8") as f:
+        intencoes = json.load(f)
+except UnicodeDecodeError:
+    with open("intencoes.json", encoding="latin-1") as f:
         intencoes = json.load(f)
 
     # Embedding da pergunta
