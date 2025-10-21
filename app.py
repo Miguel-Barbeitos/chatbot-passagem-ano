@@ -9,154 +9,113 @@ from learning_qdrant import (
 )
 
 # =====================================================
-# ⚙️ Configuração base
+# ⚙️ Configuração inicial
 # =====================================================
-st.set_page_config(page_title="🎉 Assistente da Passagem de Ano 2025/2026 🎆", page_icon="🎆")
-st.title("🎉 Assistente da Passagem de Ano 2025/2026 🎆")
+st.set_page_config(page_title="Chatbot da Passagem de Ano", page_icon="🎆")
+
+with open("profiles.json", "r", encoding="utf-8") as f:
+    profiles = json.load(f)
+
+with open("event.json", "r", encoding="utf-8") as f:
+    event = json.load(f)
 
 # =====================================================
-# 🔧 Funções utilitárias
+# 🎭 Interface Streamlit
 # =====================================================
-def normalizar(txt: str) -> str:
-    if not isinstance(txt, str):
-        return ""
-    t = txt.lower().strip()
-    t = unicodedata.normalize("NFKD", t)
-    t = "".join(c for c in t if not unicodedata.combining(c))
-    t = re.sub(r"[^\w\s]", " ", t)
-    t = re.sub(r"\s+", " ", t).strip()
-    return t
+st.title("🎇 Chatbot da Passagem de Ano")
+st.markdown("Conversa com o assistente oficial da festa 🎉")
 
-def carregar_json(path):
-    if os.path.exists(path):
-        with open(path, encoding="utf-8") as f:
-            return json.load(f)
-    return {}
-
-# =====================================================
-# 📂 Dados base
-# =====================================================
-profiles = carregar_json("profiles.json")
-event = carregar_json("event.json")
-
-# =====================================================
-# 🧍 Identificação do utilizador
-# =====================================================
 nomes = [p["nome"] for p in profiles]
-params = st.query_params
+nome_sel = st.selectbox("Quem és tu?", nomes)
+perfil = next(p for p in profiles if p["nome"] == nome_sel)
 
-if "user" not in st.session_state:
-    if "user" in params and params["user"] in nomes:
-        st.session_state["user"] = params["user"]
-    else:
-        nome_sel = st.selectbox("Quem és tu?", nomes)
-        if st.button("Confirmar"):
-            st.session_state["user"] = nome_sel
-            st.query_params["user"] = nome_sel
-            st.rerun()
-        st.stop()
+if "historico" not in st.session_state:
+    st.session_state.historico = []
 
-nome = st.session_state["user"]
-perfil = next(p for p in profiles if p["nome"] == nome)
+prompt = st.chat_input("Escreve a tua mensagem...")
 
 # =====================================================
-# 👋 Saudação inicial
+# 🧠 Funções auxiliares
 # =====================================================
-hora = datetime.now().hour
-saud = "Bom dia" if hora < 12 else "Boa tarde" if hora < 20 else "Boa noite"
-st.success(f"{saud}, {nome}! 👋 Bem-vindo ao Assistente da Passagem de Ano!")
+def normalizar(texto):
+    return texto.lower().strip()
 
-# =====================================================
-# 💬 Entrada de mensagem
-# =====================================================
-prompt = st.chat_input("Escreve aqui a tua mensagem 👇")
+def ajustar_tom_por_perfil(texto, perfil):
+    """Adapta o tom da resposta ao tipo de perfil."""
+    if perfil.get("tom") == "humoristico":
+        extras = ["😄", "😂", "😉", "🎉", "🥳"]
+        if not any(e in texto for e in extras):
+            texto += " " + random.choice(extras)
+    elif perfil.get("tom") == "formal":
+        texto = "Caro " + perfil["nome"] + ", " + texto
+    return texto
 
-# =====================================================
-# 🎭 Ajustar tom pela personalidade
-# =====================================================
-def ajustar_tom_por_perfil(resposta, perfil):
-    humor = perfil.get("personalidade", "").lower()
-    if "divertido" in humor or "extrovertido" in humor:
-        return resposta + " 😄"
-    if "formal" in humor:
-        return "Com todo o respeito, " + resposta
-    if "sarcástico" in humor:
-        return resposta + " 😉"
-    return resposta
-
-# =====================================================
-# 🧠 Função principal de resposta (AI-first)
-# =====================================================
 def gerar_resposta(pergunta, perfil):
     pergunta_l = normalizar(pergunta)
 
-    # 1️⃣ — Saudações diretas (evita respostas exageradas)
-    if any(w in pergunta_l for w in ["ola", "olá", "boas", "bom dia", "boa tarde", "boa noite"]):
-        resposta = random.choice([
-            f"Olá, {perfil['nome']}! 👋 Pronto para começar a festa?",
-            f"Boas, {perfil['nome']}! 😄 Já a pensar na noite de ano?",
-            f"Olá, {perfil['nome']}! O Diácono Remédios ao seu dispor 🙏✨",
-            f"Bem-vindo, {perfil['nome']}! 🎉 Está quase na hora do brinde!"
-        ])
-        guardar_mensagem(perfil["nome"], pergunta_l, resposta, "saudacao")
-        return ajustar_tom_por_perfil(resposta, perfil)
+    # 1️⃣ — Procurar no Qdrant (respostas inteligentes)
+    resposta_memoria = procurar_resposta_semelhante(pergunta_l, limite_conf=0.75, top_k=5)
 
-    # 2️⃣ — Procurar no Qdrant (IA semântica)
-    resposta_memoria = procurar_resposta_semelhante(pergunta_l, limite_conf=0.65, top_k=5)
+    # Evita respostas genéricas de saudação fora de contexto
     if resposta_memoria:
-        guardar_mensagem(perfil["nome"], pergunta_l, resposta_memoria, "memoria")
+        if any(p in pergunta_l for p in ["olá", "ola", "bom dia", "boa tarde", "boa noite", "boas"]):
+            return ajustar_tom_por_perfil(resposta_memoria, perfil)
+        else:
+            # Evita responder com saudação se a pergunta não for de saudação
+            if "olá" in resposta_memoria.lower() and not any(p in pergunta_l for p in ["olá", "ola", "saudacao", "cumprimento"]):
+                resposta_memoria = None
+
+    if resposta_memoria:
+        guardar_mensagem(perfil["nome"], pergunta_l, resposta_memoria, perfil)
         return ajustar_tom_por_perfil(resposta_memoria, perfil)
 
-    # 3️⃣ — Regras temáticas (fallback)
-    if any(p in pergunta_l for p in ["como te chamas", "quem es tu", "qual e o teu nome", "te chamas"]):
-        resposta = random.choice([
-            "Sou o Diácono Remédios, ao vosso serviço 🙏😄",
-            "Chamam-me Diácono Remédios — e trago boa disposição! 😎",
-            "Sou o Diácono Remédios, o assistente oficial da festa 🎉",
-        ])
+    # 2️⃣ — Regras simples (fallback)
+    if any(p in pergunta_l for p in ["como te chamas", "quem és tu", "qual é o teu nome", "te chamas"]):
+        return ajustar_tom_por_perfil("Sou o Diácono Remédios, ao vosso serviço 🙏😄", perfil)
 
-    elif any(p in pergunta_l for p in ["onde", "local", "sitio", "morada", "porto", "fica longe"]):
+    if any(p in pergunta_l for p in ["onde", "local", "sitio", "morada", "porto", "fica longe"]):
         local = event.get("local", "Casa do Miguel, Porto")
-        resposta = f"A festa vai ser em **{local}** 🎉"
+        return ajustar_tom_por_perfil(f"A festa vai ser em **{local}** 🎉", perfil)
 
-    elif any(p in pergunta_l for p in ["hora", "quando", "que horas", "a que horas"]):
-        hora_festa = event.get("hora", "21h00")
-        resposta = f"Começa às **{hora_festa}** — e promete durar até ao nascer do sol 🌅"
+    if any(p in pergunta_l for p in ["hora", "quando", "que horas", "a que horas"]):
+        return ajustar_tom_por_perfil(
+            f"Começa às **{event.get('hora', '21h00')}** — e promete durar até ao nascer do sol 🌅",
+            perfil,
+        )
 
-    elif any(p in pergunta_l for p in ["wifi", "wi fi", "internet", "rede"]):
-        resposta = f"A senha do Wi-Fi é **{event.get('wifi', 'CasaDoMiguel2025')}** 📶"
+    if any(p in pergunta_l for p in ["wifi", "wi fi", "internet", "rede"]):
+        return ajustar_tom_por_perfil(
+            f"A senha do Wi-Fi é **{event.get('wifi', 'CasaDoMiguel2025')}** 📶", perfil
+        )
 
-    elif any(p in pergunta_l for p in ["dress", "roupa", "vestir", "codigo", "cor", "amarelo"]):
-        resposta = f"O dress code é **{event.get('dress_code', 'casual elegante')}**, e a cor deste ano é **amarelo 💛**."
+    if any(p in pergunta_l for p in ["dress", "roupa", "vestir", "codigo", "cor", "amarelo"]):
+        return ajustar_tom_por_perfil(
+            f"O dress code é **{event.get('dress_code', 'casual elegante')}**, e a cor deste ano é **amarelo 💛**.",
+            perfil,
+        )
 
-    elif any(p in pergunta_l for p in ["musica", "música", "dj", "som"]):
-        resposta = "DJ confirmado, e vai tocar até os vizinhos dançarem 💃🕺"
-
-    else:
-        resposta = random.choice([
-            "Vai ser uma noite épica 🎉",
-            "Só posso dizer que vai haver surpresas 😉",
-            "Não revelo tudo, mas vai ser memorável 🎆",
-        ])
-
-    guardar_mensagem(perfil["nome"], pergunta_l, resposta, "regras")
+    respostas_default = [
+        "Vai ser uma noite épica 🎉",
+        "Só posso dizer que vai haver surpresas 😉",
+        "Não revelo tudo, mas vai ser memorável 🎆",
+        "Benfica é o maior — e a festa também 🔴⚪",
+        "O Diácono não revela segredos antes do brinde 🍾",
+    ]
+    resposta = random.choice(respostas_default)
+    guardar_mensagem(perfil["nome"], pergunta_l, resposta, perfil)
     return ajustar_tom_por_perfil(resposta, perfil)
 
 # =====================================================
-# 💬 Loop da conversa
+# 💬 Interface de chat
 # =====================================================
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
+for msg in st.session_state.historico:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
 
 if prompt:
-    st.session_state.chat_history.append(("user", prompt))
-    with st.spinner("💭 O Diácono está a pensar..."):
-        time.sleep(0.8)
-        resposta = gerar_resposta(prompt, perfil)
-    st.session_state.chat_history.append(("bot", resposta))
+    st.session_state.historico.append({"role": "user", "content": f"{perfil['nome']}: {prompt}"})
+    resposta = gerar_resposta(prompt, perfil)
+    st.session_state.historico.append({"role": "assistant", "content": f"**Assistente:** {resposta}"})
 
-for role, msg in st.session_state.chat_history:
-    if role == "user":
-        st.markdown(f"**{nome}:** {msg}")
-    else:
-        st.markdown(f"**Assistente:** {msg}")
+    with st.chat_message("assistant"):
+        st.markdown(f"**Assistente:** {resposta}")
