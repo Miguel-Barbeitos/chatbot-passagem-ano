@@ -128,28 +128,21 @@ def regras_fallback(pergunta_l: str) -> tuple[str, str] | tuple[None, None]:
 # =====================================================
 # 🧠 Função principal — gerar resposta inteligente
 # =====================================================
-# =====================================================
-# 🧠 Função principal — gerar resposta inteligente
-# =====================================================
 def gerar_resposta(pergunta: str, perfil: dict):
     pergunta_l = normalizar(pergunta)
     intencao = identificar_intencao(pergunta_l)
 
-    # ✅ Detetar confirmações diretas (quando contexto é "confirmacoes")
+    # ✅ Confirmação direta do utilizador
     ultima_intencao = st.session_state.get("ultimo_contexto", "")
     if ultima_intencao == "confirmacoes" and any(
         t in pergunta_l
-        for t in [
-            "confirmo", "confirmar", "eu confirmo", "vou",
-            "sim vou", "claro que vou", "estarei lá", "lá estarei",
-            "já", "também vou", "tambem vou"
-        ]
+        for t in ["confirmo", "confirmar", "eu confirmo", "vou", "sim vou", "claro que vou", "estarei lá", "lá estarei", "já", "também vou", "tambem vou"]
     ):
         user_name = perfil.get("nome", "Desconhecido")
         resposta = f"Boa! 🎉 Fico feliz por saber que vais, {user_name}. Já estás na lista!"
         guardar_mensagem(user_name, pergunta_l, resposta, perfil, contexto="confirmacoes")
 
-        # 🔹 Registar no Qdrant
+        # Registar no Qdrant
         try:
             from learning_qdrant import client, models
 
@@ -171,28 +164,25 @@ def gerar_resposta(pergunta: str, perfil: dict):
         except Exception as e:
             print(f"⚠️ Erro ao gravar confirmação no Qdrant: {e}")
 
-        # 🔹 Mantém o contexto ativo e atualiza a lista imediatamente
+        # Atualizar lista imediatamente
         st.session_state["ultimo_contexto"] = "confirmacoes"
         try:
             resultados = client.scroll(
                 collection_name="chatbot_passagem_ano",
                 scroll_filter=models.Filter(
-                    must=[
-                        models.FieldCondition(
-                            key="contexto", match=models.MatchValue(value="confirmacoes")
-                        )
-                    ]
+                    must=[models.FieldCondition(key="contexto", match=models.MatchValue(value="confirmacoes"))]
                 ),
-                limit=200,
+                limit=500,
             )
 
-            confirmados = [
-                p.payload["user"]
-                for p in resultados[0]
-                if p.payload and p.payload.get("user")
-            ]
-            confirmados = list(set(confirmados))
+            confirmados = []
+            for ponto in resultados[0]:
+                if ponto.payload and ponto.payload.get("user"):
+                    nome_user = str(ponto.payload["user"]).strip()
+                    if nome_user and nome_user.lower() != "none":
+                        confirmados.append(nome_user)
 
+            confirmados = sorted(list(set(confirmados)))
             if confirmados:
                 resposta_extra = f"Agora a lista está assim: {', '.join(confirmados)} 🎉"
                 resposta = f"{resposta}\n\n{resposta_extra}"
@@ -202,10 +192,7 @@ def gerar_resposta(pergunta: str, perfil: dict):
         return ajustar_tom(resposta, "confirmacoes", perfil)
 
     # 1️⃣ — Procurar resposta semelhante no Qdrant
-    resposta_memoria = procurar_resposta_semelhante(
-        pergunta_l, intencao=intencao, limite_conf=0.55, top_k=3
-    )
-
+    resposta_memoria = procurar_resposta_semelhante(pergunta_l, intencao=intencao, limite_conf=0.55, top_k=3)
     if resposta_memoria:
         guardar_mensagem(perfil["nome"], pergunta_l, resposta_memoria, perfil, contexto=intencao)
         st.session_state["ultimo_contexto"] = intencao
@@ -218,7 +205,7 @@ def gerar_resposta(pergunta: str, perfil: dict):
         st.session_state["ultimo_contexto"] = contexto
         return ajustar_tom(resposta_regra, contexto, perfil)
 
-    # 3️⃣ — Consultar confirmações (quem vai / quem confirmou)
+    # 3️⃣ — Perguntas sobre confirmações
     if (
         any(p in pergunta_l for p in ["confirmou", "quem vai", "vai à festa", "vai a festa", "quem confirmou"])
         and not any(p in pergunta_l for p in ["ganhar", "jogo", "benfica", "porto", "sporting", "resultado"])
@@ -229,34 +216,29 @@ def gerar_resposta(pergunta: str, perfil: dict):
             resultados = client.scroll(
                 collection_name="chatbot_passagem_ano",
                 scroll_filter=models.Filter(
-                    must=[
-                        models.FieldCondition(
-                            key="contexto", match=models.MatchValue(value="confirmacoes")
-                        )
-                    ]
+                    must=[models.FieldCondition(key="contexto", match=models.MatchValue(value="confirmacoes"))]
                 ),
-                limit=200,
+                limit=500,
             )
 
-            confirmados = [
-                p.payload["user"]
-                for p in resultados[0]
-                if p.payload and p.payload.get("user")
-            ]
-            confirmados = list(set(confirmados))
+            confirmados = []
+            for ponto in resultados[0]:
+                if ponto.payload and ponto.payload.get("user"):
+                    nome_user = str(ponto.payload["user"]).strip()
+                    if nome_user and nome_user.lower() != "none":
+                        confirmados.append(nome_user)
 
+            confirmados = sorted(list(set(confirmados)))
             st.session_state["ultimo_contexto"] = "confirmacoes"
 
-            if any(t in pergunta_l for t in ["quem vai", "quem confirmou", "quantas pessoas", "quem está confirmado"]):
-                if confirmados:
-                    lista = ", ".join(confirmados)
-                    resposta = f"Até agora confirmaram: {lista} 🎉"
-                else:
-                    resposta = f"Ainda ninguém confirmou oficialmente 😅 E tu, {perfil['nome']}, já confirmaste?"
+            if confirmados:
+                lista = ", ".join(confirmados)
+                resposta = f"Até agora confirmaram: {lista} 🎉"
+            else:
+                resposta = f"Ainda ninguém confirmou oficialmente 😅 E tu, {perfil['nome']}, já confirmaste?"
 
-                guardar_mensagem(perfil["nome"], pergunta_l, resposta, perfil, contexto="confirmacoes")
-                return ajustar_tom(resposta, "confirmacoes", perfil)
-
+            guardar_mensagem(perfil["nome"], pergunta_l, resposta, perfil, contexto="confirmacoes")
+            return ajustar_tom(resposta, "confirmacoes", perfil)
         except Exception as e:
             print(f"❌ Erro ao verificar confirmações: {e}")
 
@@ -284,7 +266,6 @@ def gerar_resposta(pergunta: str, perfil: dict):
     guardar_mensagem(perfil["nome"], pergunta_l, resposta, perfil)
     st.session_state["ultimo_contexto"] = "geral"
     return ajustar_tom(resposta, "geral", perfil)
-
 
 # =====================================================
 # 💬 Histórico + Chat
