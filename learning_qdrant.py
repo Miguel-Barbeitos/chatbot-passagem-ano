@@ -70,15 +70,16 @@ def guardar_mensagem(nome, pergunta, resposta, contexto="geral"):
     except Exception as e:
         print(f"❌ Erro ao guardar mensagem no Qdrant: {e}")
 
-def procurar_resposta_semelhante(pergunta, limite_conf=0.6, top_k=5):
+def procurar_resposta_semelhante(pergunta, limite_conf=0.75, top_k=5):
     try:
         vec = model.encode(pergunta).tolist()
         rs = client.search(collection_name=COLLECTION_NAME, query_vector=vec, limit=top_k)
         if rs and rs[0].score >= limite_conf:
-            return rs[0].payload.get("resposta")
-    except Exception as e:
-        print(f"❌ Erro ao procurar no Qdrant: {e}")
-    return None
+    melhor = rs[0]
+    if melhor.payload.get("contexto") == "saudacao" and not any(p in pergunta for p in ["ola", "olá", "bom dia", "boa tarde", "boa noite", "boas"]):
+        return None  # evita responder "olá" quando a pergunta não é saudação
+    return melhor.payload.get("resposta")
+
 
 def procurar_resposta_contextual(pergunta, historico):
     try:
