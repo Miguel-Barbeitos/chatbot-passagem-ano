@@ -100,31 +100,25 @@ def ajustar_tom(texto: str, contexto: str, perfil: dict) -> str:
     return texto
 
 # =====================================================
-# 💬 Motor de resposta
+# 💬 Regras fixas (fallback rápido)
 # =====================================================
 def regras_fallback(pergunta_l: str) -> tuple[str, str] | tuple[None, None]:
-    # identidade
     if any(p in pergunta_l for p in ["como te chamas", "quem es tu", "quem és tu", "qual e o teu nome", "te chamas"]):
         return ("Sou o Diácono Remédios, ao vosso serviço 🙏😄", "saudacao")
 
-    # localização
     if any(p in pergunta_l for p in ["onde", "local", "sitio", "morada", "porto", "fica longe", "localizacao"]):
         return (f"A festa é em **{event.get('local', 'Casa do Miguel, Porto')}**.", "festa")
 
-    # hora
     if any(p in pergunta_l for p in ["hora", "quando", "que horas", "a que horas", "quando comeca", "quando começa"]):
         return (f"Começa às **{event.get('hora', '21h00')}**.", "hora")
 
-    # wifi
     if any(p in pergunta_l for p in ["wifi", "wi fi", "wi-fi", "internet", "rede"]):
         return (f"A senha do Wi-Fi é **{event.get('wifi', 'CasaDoMiguel2025')}**.", "wifi")
 
-    # dress code
     if any(p in pergunta_l for p in ["dress", "roupa", "vestir", "codigo", "cor", "amarelo", "dress code"]):
         dc = event.get("dress_code", "casual elegante")
         return (f"O dress code é **{dc}** e a cor deste ano é **amarelo 💛**.", "roupa")
 
-    # o que levar
     if any(p in pergunta_l for p in ["o que levar", "o que trazer", "preciso levar", "levar algo"]):
         lista = ", ".join(event.get("trazer", ["boa disposição"]))
         return (f"Podes trazer: {lista}.", "logistica")
@@ -138,24 +132,52 @@ def gerar_resposta(pergunta: str, perfil: dict):
     pergunta_l = normalizar(pergunta)
     intencao = identificar_intencao(pergunta_l)
 
-    # 1️⃣ — Procurar resposta semelhante no Qdrant
-    resposta_memoria = procurar_resposta_semelhante(
-        pergunta_l, intencao=intencao, limite_conf=0.55, top_k=3
-    )
+    # ✅ Dar prioridade a confirmações pendentes
+    ultima_intencao = st.session_state.get("ultimo_contexto", "")
+    if ultima_intencao == "confirmacoes" and any(
+        t in pergunta_l for t in ["confirmo", "confirmar", "eu confirmo", "vou", "sim vou", "claro que vou", "estarei lá", "lá estarei"]
+    ):
+        resposta = f"Boa! 🎉 Fico feliz por saber que vais, {perfil['nome']}. Já estás na lista!"
+        guardar_mensagem(perfil["nome"], pergunta_l, resposta, perfil, contexto="confirmacoes")
 
+        try:
+            from learning_qdrant import client, models
+            client.upsert(
+                collection_name="chatbot_passagem_ano",
+                points=[
+                    models.PointStruct(
+                        id=random.randint(0, 1_000_000_000),
+                        vector=[0.0] * 768,
+                        payload={
+                            "user": perfil["nome"],
+                            "resposta": f"{perfil['nome']} confirmou presença 🎉",
+                            "contexto": "confirmacoes",
+                        },
+                    )
+                ],
+            )
+            print(f"✅ {perfil['nome']} registado como confirmado no Qdrant.")
+        except Exception as e:
+            print(f"⚠️ Erro ao gravar confirmação no Qdrant: {e}")
+
+        st.session_state["ultimo_contexto"] = ""
+        return ajustar_tom(resposta, "confirmacoes", perfil)
+
+    # 1️⃣ — Procurar resposta semelhante no Qdrant
+    resposta_memoria = procurar_resposta_semelhante(pergunta_l, intencao=intencao, limite_conf=0.55, top_k=3)
     if resposta_memoria:
         guardar_mensagem(perfil["nome"], pergunta_l, resposta_memoria, perfil, contexto=intencao)
         st.session_state["ultimo_contexto"] = intencao
         return ajustar_tom(resposta_memoria, intencao, perfil)
 
-    # 2️⃣ — Regras fixas (fallback rápido)
+    # 2️⃣ — Regras fixas
     resposta_regra, contexto = regras_fallback(pergunta_l)
     if resposta_regra:
         guardar_mensagem(perfil["nome"], pergunta_l, resposta_regra, perfil, contexto)
         st.session_state["ultimo_contexto"] = contexto
         return ajustar_tom(resposta_regra, contexto, perfil)
 
-    # 3️⃣ — Confirmações com memória no Qdrant
+    # 3️⃣ — Confirmações (quem vai / quem confirmou)
     if (
         any(p in pergunta_l for p in ["confirmou", "quem vai", "vai à festa", "vai a festa", "quem confirmou"])
         and not any(p in pergunta_l for p in ["ganhar", "jogo", "benfica", "porto", "sporting", "resultado"])
@@ -168,7 +190,7 @@ def gerar_resposta(pergunta: str, perfil: dict):
                 scroll_filter=models.Filter(
                     must=[models.FieldCondition(key="contexto", match=models.MatchValue(value="confirmacoes"))]
                 ),
-                limit=200
+                limit=200,
             )
 
             confirmados = []
@@ -179,11 +201,11 @@ def gerar_resposta(pergunta: str, perfil: dict):
                         if nome_c.lower() in resposta.lower():
                             confirmados.append(nome_c)
 
-            confirmados = list(set(confirmados))  # remover duplicados
+            confirmados = list(set(confirmados))
 
-            # --- Caso 1: Pergunta genérica
+            st.session_state["ultimo_contexto"] = "confirmacoes"
+
             if any(t in pergunta_l for t in ["quem vai", "quem confirmou", "quantas pessoas", "quem está confirmado"]):
-                st.session_state["ultimo_contexto"] = "confirmacoes"
                 if confirmados:
                     lista = ", ".join(confirmados)
                     resposta = f"Até agora confirmaram: {lista} 🎉"
@@ -192,54 +214,10 @@ def gerar_resposta(pergunta: str, perfil: dict):
                 guardar_mensagem(perfil["nome"], pergunta_l, resposta, perfil, contexto="confirmacoes")
                 return ajustar_tom(resposta, "confirmacoes", perfil)
 
-            # --- Caso 2: Pergunta específica ("a Jojo confirmou?")
-            for nome_c in ["Miguel", "Jojo", "Catarina", "Barbeitos", "Rita", "Pedro"]:
-                if nome_c.lower() in pergunta_l:
-                    st.session_state["ultimo_contexto"] = "confirmacoes"
-                    if nome_c in confirmados:
-                        resposta = f"Sim! {nome_c} já confirmou e está preparad{'o' if nome_c != 'Catarina' else 'a'} para a festa 😄"
-                    else:
-                        resposta = f"Acho que {nome_c} ainda não confirmou... E tu, {perfil['nome']}, já confirmaste? 😉"
-                    guardar_mensagem(perfil["nome"], pergunta_l, resposta, perfil, contexto="confirmacoes")
-                    return ajustar_tom(resposta, "confirmacoes", perfil)
-
         except Exception as e:
             print(f"❌ Erro ao verificar confirmações: {e}")
 
-    # ✅ 3️⃣½ — Registar confirmações diretas do utilizador (com contexto)
-    ultima_intencao = st.session_state.get("ultimo_contexto", "")
-    if (
-        any(t in pergunta_l for t in ["confirmo", "confirmar", "eu confirmo", "vou", "sim vou", "claro que vou", "estarei lá", "lá estarei"])
-        and ultima_intencao == "confirmacoes"
-    ):
-        resposta = f"Boa! 🎉 Fico feliz por saber que vais, {perfil['nome']}. Já estás na lista!"
-        guardar_mensagem(perfil["nome"], pergunta_l, resposta, perfil, contexto="confirmacoes")
-
-        # Gravar no Qdrant como confirmação oficial
-        try:
-            from learning_qdrant import client, models
-            client.upsert(
-                collection_name="chatbot_passagem_ano",
-                points=[
-                    models.PointStruct(
-                        id=random.randint(0, 1_000_000_000),
-                        vector=[0.0] * 768,
-                        payload={
-                            "user": perfil["nome"],
-                            "resposta": f"{perfil['nome']} confirmou presença 🎉",
-                            "contexto": "confirmacoes"
-                        }
-                    )
-                ]
-            )
-            print(f"✅ {perfil['nome']} registado como confirmado no Qdrant.")
-        except Exception as e:
-            print(f"⚠️ Erro ao gravar confirmação no Qdrant: {e}")
-
-        st.session_state["ultimo_contexto"] = ""  # limpa após confirmação
-        return ajustar_tom(resposta, "confirmacoes", perfil)
-
-    # 4️⃣ — Saudações diretas (backup)
+    # 4️⃣ — Saudações
     if any(t in pergunta_l for t in ["olá", "ola", "bom dia", "boa tarde", "boa noite", "como estás", "tudo bem"]):
         respostas = [
             f"Olá, {perfil['nome']}! Pronto para a festa? 🎉",
@@ -252,7 +230,7 @@ def gerar_resposta(pergunta: str, perfil: dict):
         st.session_state["ultimo_contexto"] = "saudacao"
         return ajustar_tom(resposta, "saudacao", perfil)
 
-    # 5️⃣ — Fallback geral
+    # 5️⃣ — Fallback
     respostas_default = [
         "Vai ser uma noite épica 🎉",
         "Só posso dizer que vai haver surpresas 😉",
@@ -263,7 +241,6 @@ def gerar_resposta(pergunta: str, perfil: dict):
     guardar_mensagem(perfil["nome"], pergunta_l, resposta, perfil)
     st.session_state["ultimo_contexto"] = "geral"
     return ajustar_tom(resposta, "geral", perfil)
-
 
 # =====================================================
 # 💬 Histórico + Chat
