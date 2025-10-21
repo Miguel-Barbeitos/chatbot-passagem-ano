@@ -1,10 +1,11 @@
 import streamlit as st
-import json, random, os, re, unicodedata, time
-from datetime import datetime
+import random
+import json
 from learning_qdrant import (
     guardar_mensagem,
     procurar_resposta_semelhante,
-    procurar_resposta_contextual
+    procurar_resposta_contextual,
+    limpar_qdrant
 )
 
 # =====================================================
