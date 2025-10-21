@@ -153,8 +153,10 @@ def gerar_resposta(pergunta: str, perfil: dict):
         return ajustar_tom(resposta_regra, contexto, perfil)
 
     # 3️⃣ — Confirmações com memória no Qdrant
-    if any(p in pergunta_l for p in ["confirmou", "quem vai", "vai à festa", "vai a festa", "quem confirmou"])
-    and not any(p in pergunta_l for p in ["ganhar", "jogo", "benfica", "porto", "sporting", "resultado"]):
+    if (
+    any(p in pergunta_l for p in ["confirmou", "quem vai", "vai à festa", "vai a festa", "quem confirmou"])
+    and not any(p in pergunta_l for p in ["ganhar", "jogo", "benfica", "porto", "sporting", "resultado"])
+):
         try:
             from learning_qdrant import client, models
 
