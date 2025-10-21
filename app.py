@@ -76,39 +76,48 @@ prompt = st.chat_input("Escreve aqui a tua mensagem 👇")
 def gerar_resposta(pergunta, perfil):
     pergunta_l = normalizar(pergunta)
 
-    # 1️⃣ — Procurar respostas no Qdrant (inteligência vetorial)
-    resposta_memoria = procurar_resposta_semelhante(pergunta_l, limite_conf=0.7, top_k=3)
+    # =====================================================
+    # 1️⃣ — Procurar primeiro no Qdrant (inteligência vetorial)
+    # =====================================================
+    resposta_memoria = procurar_resposta_semelhante(pergunta_l, limite_conf=0.65, top_k=5)
     if resposta_memoria:
         guardar_mensagem(perfil["nome"], pergunta_l, resposta_memoria, perfil)
         return ajustar_tom_por_perfil(resposta_memoria, perfil)
 
-    # 2️⃣ — Regras básicas (fallback)
+    # =====================================================
+    # 2️⃣ — Se não encontrou nada semelhante, aplicar regras básicas
+    # =====================================================
     if any(p in pergunta_l for p in ["como te chamas", "quem es tu", "qual e o teu nome", "te chamas"]):
-        return ajustar_tom_por_perfil("Sou o Diácono Remédios, ao vosso serviço 🙏😄", perfil)
-
-    if any(p in pergunta_l for p in ["onde", "local", "sitio", "morada", "porto", "fica longe"]):
+        resposta = "Sou o Diácono Remédios, ao vosso serviço 🙏😄"
+    
+    elif any(p in pergunta_l for p in ["onde", "local", "sitio", "morada", "porto", "fica longe"]):
         local = event.get("local", "Casa do Miguel, Porto")
-        return ajustar_tom_por_perfil(f"A festa vai ser em **{local}** 🎉", perfil)
+        resposta = f"A festa vai ser em **{local}** 🎉"
 
-    if any(p in pergunta_l for p in ["hora", "quando", "que horas", "a que horas"]):
-        return ajustar_tom_por_perfil(f"Começa às **{event.get('hora', '21h00')}** — e promete durar até ao nascer do sol 🌅", perfil)
+    elif any(p in pergunta_l for p in ["hora", "quando", "que horas", "a que horas"]):
+        resposta = f"Começa às **{event.get('hora', '21h00')}** — e promete durar até ao nascer do sol 🌅"
 
-    if any(p in pergunta_l for p in ["wifi", "wi fi", "internet", "rede"]):
-        return ajustar_tom_por_perfil(f"A senha do Wi-Fi é **{event.get('wifi', 'CasaDoMiguel2025')}** 📶", perfil)
+    elif any(p in pergunta_l for p in ["wifi", "wi fi", "internet", "rede"]):
+        resposta = f"A senha do Wi-Fi é **{event.get('wifi', 'CasaDoMiguel2025')}** 📶"
 
-    if any(p in pergunta_l for p in ["dress", "roupa", "vestir", "codigo", "cor", "amarelo"]):
-        return ajustar_tom_por_perfil(
-            f"O dress code é **{event.get('dress_code', 'casual elegante')}**, e a cor deste ano é **amarelo 💛**.", perfil
-        )
+    elif any(p in pergunta_l for p in ["dress", "roupa", "vestir", "codigo", "cor", "amarelo"]):
+        resposta = f"O dress code é **{event.get('dress_code', 'casual elegante')}**, e a cor deste ano é **amarelo 💛**."
 
-    respostas_default = [
-        "Vai ser uma noite épica 🎉",
-        "Só posso dizer que vai haver surpresas 😉",
-        "Não revelo tudo, mas vai ser memorável 🎆"
-    ]
-    resposta = random.choice(respostas_default)
+    else:
+        # =====================================================
+        # 3️⃣ — Fallback (nenhuma regra corresponde)
+        # =====================================================
+        respostas_default = [
+            "Vai ser uma noite épica 🎉",
+            "Só posso dizer que vai haver surpresas 😉",
+            "Não revelo tudo, mas vai ser memorável 🎆",
+            "O Diácono Remédios ainda está a ensaiar a resposta 😄"
+        ]
+        resposta = random.choice(respostas_default)
+
     guardar_mensagem(perfil["nome"], pergunta_l, resposta, perfil)
     return ajustar_tom_por_perfil(resposta, perfil)
+
 
 # =====================================================
 # 🎭 Ajustar o tom conforme o perfil
