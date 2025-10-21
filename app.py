@@ -7,13 +7,14 @@ from learning_memory import atualizar_memoria, procurar_resposta_memorizada
 # =====================================================
 # ⚙️ Configuração
 # =====================================================
-st.set_page_config(page_title="🎉 Assistente da Passagem de Ano 🎆", page_icon="🎆")
+st.set_page_config(page_title="🎉 Diácono Remédios - Chatbot 🎆", page_icon="🎆")
 st.title("🎉 Assistente da Passagem de Ano 2025/2026 🎆")
 
 # =====================================================
 # 📂 Carregar dados
 # =====================================================
 def carregar_json(path):
+    """Lê ficheiros JSON de perfis e evento."""
     if os.path.exists(path):
         with open(path, encoding="utf-8") as f:
             return json.load(f)
@@ -23,19 +24,27 @@ profiles = carregar_json("profiles.json")
 event = carregar_json("event.json")
 
 # =====================================================
-# 🧍 Identificação
+# 🧍 Identificação do utilizador
 # =====================================================
-nnomes = [p["nome"] for p in profiles]
-params = st.query_params
+# Compatibilidade entre versões do Streamlit
+try:
+    params = st.query_params  # novas versões (>=1.39)
+except AttributeError:
+    params = st.experimental_get_query_params()  # versões antigas
+
+nomes = [p["nome"] for p in profiles]
 
 if "user" not in st.session_state:
-    if "user" in params and params["user"][0] in nomes:
-        st.session_state["user"] = params["user"][0]
+    if "user" in params and params["user"] in nomes:
+        st.session_state["user"] = params["user"]
     else:
         nome_sel = st.selectbox("Quem és tu?", nomes)
         if st.button("Confirmar"):
             st.session_state["user"] = nome_sel
-            st.experimental_set_query_params(user=nome_sel)
+            try:
+                st.query_params["user"] = nome_sel
+            except AttributeError:
+                st.experimental_set_query_params(user=nome_sel)
             st.rerun()
         st.stop()
 
@@ -50,35 +59,29 @@ saud = "Bom dia" if hora < 12 else "Boa tarde" if hora < 20 else "Boa noite"
 st.success(f"{saud}, {nome}! 👋 Bem-vindo ao Assistente da Passagem de Ano!")
 
 # =====================================================
-# 🧠 Geração de resposta
+# 🧠 Função principal
 # =====================================================
 def gerar_resposta(pergunta, perfil):
     pergunta_l = pergunta.lower()
 
-    # 1️⃣ Verifica se já existe uma resposta memorizada (aprendizagem local)
+    # 1️⃣ Verifica memória local (aprendizagem simples)
     resposta_memorizada = procurar_resposta_memorizada(pergunta_l)
     if resposta_memorizada:
         return f"Lembro-me disso! 😉 {resposta_memorizada}"
 
-    # 2️⃣ Tenta encontrar uma resposta semelhante na base vetorial (Qdrant)
+    # 2️⃣ Verifica memória semântica (Qdrant)
     resposta_semelhante = procurar_resposta_semelhante(pergunta_l)
     if resposta_semelhante:
         return f"Já me perguntaste algo parecido 😄 {resposta_semelhante}"
 
-    # 3️⃣ Caso contrário, gera uma resposta nova (com regras básicas)
+    # 3️⃣ Caso contrário, aplica regras básicas
     if any(p in pergunta_l for p in ["como te chamas", "quem es tu", "quem és tu", "qual é o teu nome", "como te devo chamar", "teu nome", "te chamas"]):
         respostas_nome = [
             "Sou o Diácono Remédios, ao vosso serviço 🙏😄",
             "Chamam-me Diácono Remédios — e trago boa disposição! 😎",
             "Sou o Diácono Remédios, o assistente oficial da festa 🎉",
             "Diácono Remédios, para o servir com graça e alegria! ✨",
-            "Sou o Diácono Remédios, ao vosso serviço 🙏😄 — e prometo não receitar chá para todas as dores!",
-            "Chamam-me Diácono Remédios — e trago boa disposição! 😎 Também aceito pedidos de piadas ruins.",
-            "Sou o Diácono Remédios, o assistente oficial da festa 🎉, especialista em distribuir sorrisos e confetes!",
-            "Diácono Remédios, para o servir com graça e alegria! ✨ Aviso: posso dançar para animar também.",
-            "Aqui está o Diácono Remédios, pronto para curar o tédio com uma dose generosa de humor! 🤪",
             "Sou o Diácono Remédios, receitando gargalhadas grátis — sem contraindicações! 😂",
-            "Diácono Remédios na área, preparado para transformar qualquer momento chato em festa! 🕺🎈"
         ]
         resposta = random.choice(respostas_nome)
 
@@ -101,14 +104,14 @@ def gerar_resposta(pergunta, perfil):
             "Não revelo tudo, mas vai ser memorável 🎆"
         ])
 
-    # 4️⃣ Guarda o novo conhecimento nas duas memórias
+    # 4️⃣ Guarda conhecimento nas memórias
     guardar_mensagem(perfil["nome"], pergunta, resposta)
     atualizar_memoria(pergunta, resposta)
 
     return resposta
 
 # =====================================================
-# 💬 Interface de chat
+# 💬 Interface do chat
 # =====================================================
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
