@@ -1,11 +1,19 @@
-﻿import os, tarfile, zipfile
+﻿import os
 import json
 import random
-from sentence_transformers import SentenceTransformer
+import numpy as np
+from sentence_transformers import SentenceTransformer, util
 from qdrant_client import QdrantClient, models
+import zipfile, tarfile
+
+# =====================================================
+# ⚙️ CONFIGURAÇÃO GERAL
+# =====================================================
+QDRANT_PATH = "qdrant_data"
+COLLECTION_NAME = "chatbot_passagem_ano"
 
 # --- Auto-extração da base Qdrant no arranque ---
-if not os.path.exists("qdrant_data"):
+if not os.path.exists(QDRANT_PATH):
     if os.path.exists("qdrant_data.zip"):
         print("📦 A extrair base Qdrant (zip)...")
         with zipfile.ZipFile("qdrant_data.zip", "r") as zip_ref:
@@ -15,24 +23,22 @@ if not os.path.exists("qdrant_data"):
         with tarfile.open("qdrant_data.tar.gz", "r:gz") as tar:
             tar.extractall()
 
-QDRANT_PATH = "qdrant_data"
-COLLECTION_NAME = "chatbot_passagem_ano"
-
-os.makedirs(QDRANT_PATH, exist_ok=True)
-
-print("🔧 A inicializar modelo multilíngue (intfloat/multilingual-e5-base)…")
+# =====================================================
+# 🧠 MODELO DE EMBEDDINGS
+# =====================================================
+print("🔧 A inicializar modelo de embeddings multilíngue...")
 model = SentenceTransformer("intfloat/multilingual-e5-base")
 
 # =====================================================
-# Inicializar cliente Qdrant
+# 💾 INICIALIZAÇÃO QDRANT
 # =====================================================
 def inicializar_qdrant():
     try:
         client = QdrantClient(path=QDRANT_PATH)
     except RuntimeError:
-        print("⚠️ Base Qdrant corrompida — recriando…")
+        print("⚠️ Base corrompida — recriando diretório...")
         import shutil
-        shutil.rmtree(QDRANT_PATH, ignore_errors=True)
+        shutil.rmtree(QDRANT_PATH)
         os.makedirs(QDRANT_PATH, exist_ok=True)
         client = QdrantClient(path=QDRANT_PATH)
 
@@ -41,28 +47,53 @@ def inicializar_qdrant():
         client.create_collection(
             collection_name=COLLECTION_NAME,
             vectors_config={
-                "default": models.VectorParams(
-                    size=768,
-                    distance=models.Distance.COSINE
-                )
+                "default": models.VectorParams(size=768, distance=models.Distance.COSINE)
             }
         )
-        print(f"✅ Nova coleção '{COLLECTION_NAME}' criada com sucesso!")
+        print("✨ Nova coleção criada!")
     return client
 
 client = inicializar_qdrant()
 
 # =====================================================
-# Guardar mensagem
+# 🧭 DETEÇÃO DE INTENÇÃO SEMÂNTICA
 # =====================================================
-def guardar_mensagem(nome, pergunta, resposta, contexto="geral"):
+INTENCOES_BASE = {
+    "saudacao": ["olá", "bom dia", "boa tarde", "boa noite", "como estás"],
+    "festa": ["onde é a festa", "hora da festa", "quem vai", "vai haver música", "DJ", "vai ser no porto"],
+    "comida": ["vai haver jantar", "o que vai haver para comer", "há sobremesas", "menu"],
+    "bebida": ["vai haver cerveja", "há vinho", "cocktails", "shots", "champanhe"],
+    "roupa": ["dress code", "o que vestir", "cor do ano", "amarelo"],
+    "futebol": ["benfica", "porto", "sporting", "futebol", "jogo", "ganhar"],
+    "piadas": ["conta uma piada", "faz-me rir", "piada", "anedota"],
+    "confirmacoes": ["quem vai", "a jojo vai", "o miguel confirmou", "quantas pessoas vão"],
+    "logistica": ["há estacionamento", "transporte", "como chegar", "longe", "uber"]
+}
+intencoes_embeds = {k: model.encode(v, convert_to_tensor=True) for k, v in INTENCOES_BASE.items()}
+
+def identificar_intencao(pergunta):
+    """Deteta a intenção mais próxima com embeddings"""
+    pergunta_vec = model.encode(pergunta, convert_to_tensor=True)
+    melhor_intencao, melhor_score = "geral", 0.4
+    for k, embeds in intencoes_embeds.items():
+        sim = util.cos_sim(pergunta_vec, embeds).mean().item()
+        if sim > melhor_score:
+            melhor_intencao, melhor_score = k, sim
+    return melhor_intencao
+
+# =====================================================
+# 💾 GUARDAR MENSAGEM
+# =====================================================
+def guardar_mensagem(nome, pergunta, resposta, perfil, contexto="geral"):
+    """Guarda a interação com payload completo"""
     try:
         vector = model.encode(pergunta).tolist()
         payload = {
             "user": nome,
             "pergunta": pergunta,
             "resposta": resposta,
-            "contexto": contexto
+            "contexto": contexto,
+            "perfil": perfil.get("tipo", "desconhecido")
         }
         client.upsert(
             collection_name=COLLECTION_NAME,
@@ -78,69 +109,45 @@ def guardar_mensagem(nome, pergunta, resposta, contexto="geral"):
         print(f"❌ Erro ao guardar mensagem no Qdrant: {e}")
 
 # =====================================================
-# Procurar resposta semelhante
+# 🔍 PROCURA SEMÂNTICA COM CONTEXTO
 # =====================================================
-def procurar_resposta_semelhante(pergunta, limite_conf=0.75, top_k=5):
+def procurar_resposta_semelhante(pergunta, intencao=None, limite_conf=0.8, top_k=1):
+    """Procura a resposta mais relevante filtrada pela intenção"""
     try:
         vector = model.encode(pergunta).tolist()
+        filtro = None
+        if intencao and intencao != "geral":
+            filtro = models.Filter(
+                must=[models.FieldCondition(key="contexto", match=models.MatchValue(value=intencao))]
+            )
         resultado = client.search(
             collection_name=COLLECTION_NAME,
             query_vector=vector,
+            query_filter=filtro,
             limit=top_k
         )
         if not resultado:
             return None
-
         melhor = resultado[0]
         if melhor.score >= limite_conf:
-            # Evita responder "olá" se não for saudação
-            if melhor.payload.get("contexto") == "saudacao" and not any(
-                p in pergunta for p in ["ola", "olá", "bom dia", "boa tarde", "boa noite", "boas"]
-            ):
-                return None
             return melhor.payload.get("resposta")
     except Exception as e:
-        print(f"❌ Erro ao procurar no Qdrant: {e}")
+        print(f"❌ Erro ao procurar resposta: {e}")
     return None
 
 # =====================================================
-# Procurar com contexto
-# =====================================================
-def procurar_resposta_contextual(pergunta, historico):
-    try:
-        contexto = " ".join(historico[-5:])
-        texto_completo = contexto + " " + pergunta
-        vector = model.encode(texto_completo).tolist()
-        resultado = client.search(
-            collection_name=COLLECTION_NAME,
-            query_vector=vector,
-            limit=5
-        )
-        if resultado and resultado[0].score > 0.6:
-            return resultado[0].payload.get("resposta")
-    except Exception as e:
-        print(f"❌ Erro no contexto Qdrant: {e}")
-    return None
-
-# =====================================================
-# Limpar coleção
+# 🧹 LIMPAR COLEÇÃO
 # =====================================================
 def limpar_qdrant():
-    """Apaga e recria a coleção Qdrant de forma segura."""
     try:
         client.delete_collection(COLLECTION_NAME)
         print("🧹 Coleção Qdrant apagada.")
-        
         client.create_collection(
             collection_name=COLLECTION_NAME,
             vectors_config={
-                "default": models.VectorParams(
-                    size=768,
-                    distance=models.Distance.COSINE
-                )
+                "default": models.VectorParams(size=768, distance=models.Distance.COSINE)
             }
         )
-        print("✨ Nova coleção criada com sucesso.")
+        print("✨ Nova coleção criada.")
     except Exception as e:
-        print(f"❌ Erro ao limpar Qdrant: {e}")
-
+        print(f"Erro ao limpar Qdrant: {e}")
