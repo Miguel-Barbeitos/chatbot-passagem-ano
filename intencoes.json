@@ -1,0 +1,8 @@
+{
+  "local": ["onde é a festa", "qual é o local", "morada da festa"],
+  "hora": ["a que horas começa", "quando começa", "horário da festa"],
+  "musica": ["vai haver música", "tem dj", "vai ter som", "vai ter dança"],
+  "comida": ["vai haver comida", "vai ter jantar", "vai ter petiscos"],
+  "bebida": ["vai ter bar", "vai haver bebidas", "tem cerveja", "tem vinho"],
+  "fogo": ["vai haver fogo de artifício", "vai ter fogo", "fogo de artificio"]
+}

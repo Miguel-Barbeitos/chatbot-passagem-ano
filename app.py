@@ -1,10 +1,13 @@
 import streamlit as st
 import json, random, os, time, re, unicodedata
 from datetime import datetime
-from learning_qdrant import guardar_mensagem, procurar_resposta_semelhante, procurar_resposta_contextual
+from learning_qdrant import (
+    guardar_mensagem,
+    procurar_resposta_semelhante,
+    procurar_resposta_contextual,
+    identificar_intencao
+)
 from learning_memory import atualizar_memoria, procurar_resposta_memorizada
-
-
 
 # =====================================================
 # ⚙️ Configuração inicial
@@ -34,7 +37,7 @@ def normalizar(txt: str) -> str:
     return t
 
 # =====================================================
-# 📄 Dados iniciais (apenas perfis)
+# 📄 Dados iniciais
 # =====================================================
 profiles = carregar_json("profiles.json")
 
@@ -77,7 +80,10 @@ st.success(f"{saud}, {nome}! 👋 Bem-vindo ao Assistente da Passagem de Ano!")
 # =====================================================
 def gerar_resposta(pergunta, perfil):
     pergunta_l = normalizar(pergunta)
-    event = carregar_json("event.json")  # 🔁 lê sempre a versão mais recente
+    event = carregar_json("event.json")  # lê sempre a versão mais recente
+
+    # Histórico do utilizador para contexto
+    historico_user = [msg for role, msg in st.session_state.chat_history if role == "user"]
 
     # 0️⃣ Cumprimentos simples
     if any(w in pergunta_l for w in ["ola", "boa tarde", "boa noite", "bom dia", "boas"]):
@@ -106,31 +112,69 @@ def gerar_resposta(pergunta, perfil):
         atualizar_memoria(pergunta, resposta)
         return resposta
 
-    # 2️⃣ Comparação de locais (ex: Porto vs Algarve)
+    # 2️⃣ Deteção de intenção (usando embeddings)
+    intencao = identificar_intencao(pergunta_l)
+    if intencao == "musica":
+        resposta = random.choice([
+            "Claro que sim! 🎶 Vai haver música até o sol nascer!",
+            "DJ confirmado, {perfil['nome']}! Prepara-te para dançar 💃🕺",
+            "Vai haver música boa — e talvez uns passos de dança do Diácono! 😄"
+        ])
+        guardar_mensagem(perfil["nome"], pergunta, resposta)
+        atualizar_memoria(pergunta, resposta)
+        return resposta
+
+    if intencao == "comida":
+        resposta = random.choice([
+            "Vai haver petiscos deliciosos 🍤, sobremesas e boa companhia!",
+            "Comida não vai faltar, {perfil['nome']} — o estômago também merece festa 😋"
+        ])
+        guardar_mensagem(perfil["nome"], pergunta, resposta)
+        atualizar_memoria(pergunta, resposta)
+        return resposta
+
+    if intencao == "bebida":
+        resposta = random.choice([
+            "O bar vai estar aberto 🍻 — com cerveja gelada e vinho à escolha!",
+            "Vai ter bebidas para todos os gostos, até água benta se pedires 😇"
+        ])
+        guardar_mensagem(perfil["nome"], pergunta, resposta)
+        atualizar_memoria(pergunta, resposta)
+        return resposta
+
+    if intencao == "fogo":
+        resposta = random.choice([
+            "Claro que vai haver fogo de artifício! 🎆🎇",
+            "Vai haver fogo sim, {perfil['nome']} — e o céu vai brilhar tanto quanto tu 😎"
+        ])
+        guardar_mensagem(perfil["nome"], pergunta, resposta)
+        atualizar_memoria(pergunta, resposta)
+        return resposta
+
+    # 3️⃣ Comparação de locais (ex: Porto vs Algarve)
     if any(cidade in pergunta_l for cidade in ["porto", "lisboa", "algarve", "coimbra", "braga", "aveiro", "faro", "guimaraes"]):
         locais_encontrados = [cidade for cidade in ["porto", "lisboa", "algarve", "coimbra", "braga", "aveiro", "faro", "guimaraes"] if cidade in pergunta_l]
         if len(locais_encontrados) >= 2:
             resposta = random.choice([
                 f"Bem... depende de quantas paragens fizeres pelo caminho 😄 {locais_encontrados[0].capitalize()} e {locais_encontrados[1].capitalize()} ficam a umas boas horas de carro 🚗",
-                f"{locais_encontrados[0].capitalize()} e {locais_encontrados[1].capitalize()}? Digamos que dá tempo para ouvir umas boas playlists no caminho 🎶",
+                f"{locais_encontrados[0].capitalize()} e {locais_encontrados[1].capitalize()}? Dá tempo para ouvir umas boas playlists no caminho 🎶",
                 f"Entre {locais_encontrados[0].capitalize()} e {locais_encontrados[1].capitalize()} são umas horitas, mas nada que uma boa conversa e música não resolvam 😉"
             ])
             guardar_mensagem(perfil["nome"], pergunta, resposta)
             atualizar_memoria(pergunta, resposta)
             return resposta
 
-    # 3️⃣ Memória semântica (Qdrant)
-    historico_user = [msg for role, msg in st.session_state.chat_history if role == "user"]
+    # 4️⃣ Memória contextual (Qdrant)
     resposta_semelhante = procurar_resposta_contextual(pergunta_l, historico_user)
     if resposta_semelhante:
         return f"Já me perguntaste algo parecido 😄 {resposta_semelhante}"
 
-    # 4️⃣ Memória local
+    # 5️⃣ Memória local
     resposta_memorizada = procurar_resposta_memorizada(pergunta_l)
     if resposta_memorizada:
         return f"Lembro-me disso! 😉 {resposta_memorizada}"
 
-    # 5️⃣ Regras gerais
+    # 6️⃣ Regras gerais
     if any(w in pergunta_l for w in ["wifi", "wi fi", "wi-fi", "internet", "rede"]):
         resposta = f"A senha do Wi-Fi é **{event.get('wifi', 'CasaDoMiguel2025')}** 😉"
 
