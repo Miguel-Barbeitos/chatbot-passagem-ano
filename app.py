@@ -102,6 +102,34 @@ def ajustar_tom(texto: str, contexto: str, perfil: dict) -> str:
 # =====================================================
 # 💬 Motor de resposta
 # =====================================================
+def regras_fallback(pergunta_l: str) -> tuple[str, str] | tuple[None, None]:
+    # identidade
+    if any(p in pergunta_l for p in ["como te chamas", "quem es tu", "quem és tu", "qual e o teu nome", "te chamas"]):
+        return ("Sou o Diácono Remédios, ao vosso serviço 🙏😄", "saudacao")
+
+    # localização
+    if any(p in pergunta_l for p in ["onde", "local", "sitio", "morada", "porto", "fica longe", "localizacao"]):
+        return (f"A festa é em **{event.get('local', 'Casa do Miguel, Porto')}**.", "festa")
+
+    # hora
+    if any(p in pergunta_l for p in ["hora", "quando", "que horas", "a que horas", "quando comeca", "quando começa"]):
+        return (f"Começa às **{event.get('hora', '21h00')}**.", "hora")
+
+    # wifi
+    if any(p in pergunta_l for p in ["wifi", "wi fi", "wi-fi", "internet", "rede"]):
+        return (f"A senha do Wi-Fi é **{event.get('wifi', 'CasaDoMiguel2025')}**.", "wifi")
+
+    # dress code
+    if any(p in pergunta_l for p in ["dress", "roupa", "vestir", "codigo", "cor", "amarelo", "dress code"]):
+        dc = event.get("dress_code", "casual elegante")
+        return (f"O dress code é **{dc}** e a cor deste ano é **amarelo 💛**.", "roupa")
+
+    # o que levar
+    if any(p in pergunta_l for p in ["o que levar", "o que trazer", "preciso levar", "levar algo"]):
+        lista = ", ".join(event.get("trazer", ["boa disposição"]))
+        return (f"Podes trazer: {lista}.", "logistica")
+
+    return (None, None)
 # =====================================================
 # 🧠 Função principal — gerar resposta inteligente
 # =====================================================
