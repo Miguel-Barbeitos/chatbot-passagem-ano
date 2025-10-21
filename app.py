@@ -130,6 +130,7 @@ def regras_fallback(pergunta_l: str) -> tuple[str, str] | tuple[None, None]:
         return (f"Podes trazer: {lista}.", "logistica")
 
     return (None, None)
+
 # =====================================================
 # 🧠 Função principal — gerar resposta inteligente
 # =====================================================
@@ -154,9 +155,9 @@ def gerar_resposta(pergunta: str, perfil: dict):
 
     # 3️⃣ — Confirmações com memória no Qdrant
     if (
-    any(p in pergunta_l for p in ["confirmou", "quem vai", "vai à festa", "vai a festa", "quem confirmou"])
-    and not any(p in pergunta_l for p in ["ganhar", "jogo", "benfica", "porto", "sporting", "resultado"])
-):
+        any(p in pergunta_l for p in ["confirmou", "quem vai", "vai à festa", "vai a festa", "quem confirmou"])
+        and not any(p in pergunta_l for p in ["ganhar", "jogo", "benfica", "porto", "sporting", "resultado"])
+    ):
         try:
             from learning_qdrant import client, models
 
@@ -176,7 +177,7 @@ def gerar_resposta(pergunta: str, perfil: dict):
                         if nome_c.lower() in resposta.lower():
                             confirmados.append(nome_c)
 
-            confirmados = list(set(confirmados))  # remover duplicados
+            confirmados = list(set(confirmados))
 
             # --- Caso 1: Pergunta genérica
             if any(t in pergunta_l for t in ["quem vai", "quem confirmou", "quantas pessoas", "quem está confirmado"]):
@@ -201,7 +202,7 @@ def gerar_resposta(pergunta: str, perfil: dict):
         except Exception as e:
             print(f"❌ Erro ao verificar confirmações: {e}")
 
-    # 4️⃣ — Saudações diretas (backup)
+    # 4️⃣ — Saudações diretas
     if any(t in pergunta_l for t in ["olá", "ola", "bom dia", "boa tarde", "boa noite", "como estás", "tudo bem"]):
         respostas = [
             f"Olá, {perfil['nome']}! Pronto para a festa? 🎉",
@@ -213,9 +214,7 @@ def gerar_resposta(pergunta: str, perfil: dict):
         guardar_mensagem(perfil["nome"], pergunta_l, resposta, perfil, contexto="saudacao")
         return ajustar_tom(resposta, "saudacao", perfil)
 
-
-        
-        # 5️⃣ — Fallback de conversa geral (último recurso)
+    # 5️⃣ — Fallback genérico
     respostas_default = [
         "Vai ser uma noite épica 🎉",
         "Só posso dizer que vai haver surpresas 😉",
@@ -225,7 +224,6 @@ def gerar_resposta(pergunta: str, perfil: dict):
     resposta = random.choice(respostas_default)
     guardar_mensagem(perfil["nome"], pergunta_l, resposta, perfil)
     return ajustar_tom(resposta, "geral", perfil)
-
 
 # =====================================================
 # 💬 Histórico + Chat
