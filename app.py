@@ -150,21 +150,36 @@ prompt = st.chat_input("Escreve a tua mensagem…")
 # =====================================================
 # 🧠 Motor de resposta
 # =====================================================
-def gerar_resposta(pergunta_raw: str, perfil: dict) -> str:
-    pergunta_l = normalizar(pergunta_raw)
+    # 3️⃣ — Tentar procurar no Qdrant com intenção
+    intencao = identificar_intencao(pergunta_l)
+    resposta_memoria = procurar_resposta_semelhante(pergunta_l, intencao=intencao, limite_conf=0.6, top_k=3)
 
-    # 🎯 0) Saudações (resposta imediata)
-    if any(t in pergunta_l for t in ["ola", "olá", "boas", "bom dia", "boa tarde", "boa noite"]):
+    if resposta_memoria:
+        guardar_mensagem(perfil["nome"], pergunta_l, resposta_memoria, perfil, contexto=intencao)
+        return resposta_memoria
+
+    # 4️⃣ — Fallback: respostas por intenção básica
+    if any(t in pergunta_l for t in ["como vais", "tudo bem", "como estás", "esta tudo bem", "como te sentes"]):
         respostas = [
-            f"Bom ver-te, {perfil['nome']}! Que nunca falte o café nem o champanhe ☕🍾",
-            f"Olá, {perfil['nome']}! Pronto para a festa? 🎉",
-            f"Boas, {perfil['nome']}! Preparado para dançar? 💃🕺",
-            f"{perfil['nome']}, que bom ler-te! Vai ser épico. 🥳",
-            f"{perfil['nome']}, bem-vindo! Já cheira a festa! ✨",
+            f"Estou ótimo, {perfil['nome']}! A preparar-me para a festa 🥳",
+            f"Tudo a bombar, {perfil['nome']}! E contigo? 😄",
+            f"Melhor agora que falas comigo, {perfil['nome']} 😏",
+            f"Por aqui tudo bem, pronto para o champanhe 🍾",
         ]
         resposta = random.choice(respostas)
         guardar_mensagem(perfil["nome"], pergunta_l, resposta, perfil, contexto="saudacao")
         return resposta
+
+    # 5️⃣ — Último recurso (fallback genérico)
+    respostas_default = [
+        "Vai ser uma noite épica 🎉",
+        "Só posso dizer que vai haver surpresas 😉",
+        "Não revelo tudo, mas vai ser memorável 🎆",
+    ]
+    resposta = random.choice(respostas_default)
+    guardar_mensagem(perfil["nome"], pergunta_l, resposta, perfil)
+    return resposta
+
 
 # =====================================================
 # ▶️ Execução por mensagem
