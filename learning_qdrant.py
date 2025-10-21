@@ -29,8 +29,9 @@ def inicializar_qdrant():
     if COLLECTION_NAME not in collections:
         client.create_collection(
             collection_name=COLLECTION_NAME,
-            vectors_config=models.VectorParams(size=768, distance=models.Distance.COSINE)
-        )
+            vectors_config={
+        "default": models.VectorParams(size=768, distance=models.Distance.COSINE)
+    }
         print("✅ Nova coleção criada com sucesso!")
     return client
 
@@ -115,8 +116,12 @@ def limpar_qdrant():
         print("🧹 Coleção Qdrant apagada.")
         client.create_collection(
             collection_name=COLLECTION_NAME,
-            vectors_config=models.VectorParams(size=768, distance=models.Distance.COSINE)
-        )
+            vectors_config=client.create_collection(
+    collection_name=COLLECTION_NAME,
+    vectors_config={
+        "default": models.VectorParams(size=768, distance=models.Distance.COSINE)
+    }
+)
         print("✨ Nova coleção criada.")
     except Exception as e:
         print(f"Erro ao limpar Qdrant: {e}")
