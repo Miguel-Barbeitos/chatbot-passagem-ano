@@ -132,7 +132,7 @@ def gerar_resposta(pergunta: str, perfil: dict):
     pergunta_l = normalizar(pergunta)
     intencao = identificar_intencao(pergunta_l)
 
-    # ✅ Dar prioridade a confirmações pendentes
+    # ✅ Prioridade para confirmações pendentes
     ultima_intencao = st.session_state.get("ultimo_contexto", "")
     if ultima_intencao == "confirmacoes" and any(
         t in pergunta_l for t in ["confirmo", "confirmar", "eu confirmo", "vou", "sim vou", "claro que vou", "estarei lá", "lá estarei"]
@@ -193,26 +193,36 @@ def gerar_resposta(pergunta: str, perfil: dict):
                 limit=200,
             )
 
-            confirmados = []
+            confirmados = set()
             for ponto in resultados[0]:
-                if ponto.payload and "resposta" in ponto.payload:
-                    resposta = ponto.payload["resposta"]
-                    for nome_c in ["Miguel", "Jojo", "Catarina", "Barbeitos", "Rita", "Pedro"]:
-                        if nome_c.lower() in resposta.lower():
-                            confirmados.append(nome_c)
-
-            confirmados = list(set(confirmados))
+                if ponto.payload:
+                    user_payload = ponto.payload.get("user", "").strip().lower()
+                    resposta_payload = ponto.payload.get("resposta", "").lower()
+                    for nome_c in ["miguel", "jojo", "catarina", "barbeitos", "rita", "pedro"]:
+                        if nome_c in user_payload or nome_c in resposta_payload:
+                            confirmados.add(nome_c.capitalize())
 
             st.session_state["ultimo_contexto"] = "confirmacoes"
 
+            # --- Pergunta genérica
             if any(t in pergunta_l for t in ["quem vai", "quem confirmou", "quantas pessoas", "quem está confirmado"]):
                 if confirmados:
-                    lista = ", ".join(confirmados)
+                    lista = ", ".join(sorted(confirmados))
                     resposta = f"Até agora confirmaram: {lista} 🎉"
                 else:
                     resposta = f"Ainda ninguém confirmou oficialmente 😅 E tu, {perfil['nome']}, já confirmaste?"
                 guardar_mensagem(perfil["nome"], pergunta_l, resposta, perfil, contexto="confirmacoes")
                 return ajustar_tom(resposta, "confirmacoes", perfil)
+
+            # --- Pergunta específica
+            for nome_c in ["miguel", "jojo", "catarina", "barbeitos", "rita", "pedro"]:
+                if nome_c in pergunta_l:
+                    if nome_c.capitalize() in confirmados:
+                        resposta = f"Sim! {nome_c.capitalize()} já confirmou e está preparad{'o' if nome_c != 'catarina' else 'a'} para a festa 😄"
+                    else:
+                        resposta = f"Acho que {nome_c.capitalize()} ainda não confirmou... E tu, {perfil['nome']}, já confirmaste? 😉"
+                    guardar_mensagem(perfil["nome"], pergunta_l, resposta, perfil, contexto="confirmacoes")
+                    return ajustar_tom(resposta, "confirmacoes", perfil)
 
         except Exception as e:
             print(f"❌ Erro ao verificar confirmações: {e}")
