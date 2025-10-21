@@ -84,22 +84,26 @@ def identificar_intencao(pergunta):
 def guardar_mensagem(nome, pergunta, resposta, perfil, contexto="geral"):
     """Guarda a interação no Qdrant com identificação completa do utilizador."""
     try:
-        # Garante que o nome é válido
-        user_name = nome or perfil.get("nome", "Desconhecido")
+        # Nome do utilizador: prioridade ao nome explícito, depois ao perfil
+        user_name = (
+            nome
+            if nome and nome.strip()
+            else perfil.get("nome", "Desconhecido")
+        )
 
-        # Cria o vetor de embedding da pergunta
+        # Criação do vetor da pergunta
         vector = model.encode(pergunta).tolist()
 
-        # Payload completo e coerente
+        # Payload completo (usar 'personalidade' em vez de 'tipo')
         payload = {
             "user": user_name,
             "pergunta": pergunta,
             "resposta": resposta,
             "contexto": contexto,
-            "perfil": perfil.get("tipo", "desconhecido"),
+            "personalidade": perfil.get("personalidade", "desconhecida"),
         }
 
-        # Inserção na coleção
+        # Inserção no Qdrant
         client.upsert(
             collection_name=COLLECTION_NAME,
             points=[
@@ -115,6 +119,7 @@ def guardar_mensagem(nome, pergunta, resposta, perfil, contexto="geral"):
 
     except Exception as e:
         print(f"❌ Erro ao guardar mensagem no Qdrant: {e}")
+
 
 
 # =====================================================
