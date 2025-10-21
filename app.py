@@ -153,36 +153,18 @@ prompt = st.chat_input("Escreve a tua mensagem…")
 def gerar_resposta(pergunta_raw: str, perfil: dict) -> str:
     pergunta_l = normalizar(pergunta_raw)
 
-    # 1) detetar intenção
-    intencao = identificar_intencao(pergunta_l)
-
-    # 2) tentar Qdrant com filtro por contexto
-    resposta = procurar_resposta_semelhante(pergunta_l, intencao=intencao, limite_conf=0.6, top_k=1)
-
-    # 3) fallback informativo (sem exagerar no humor)
-    if not resposta:
-        regra_txt, regra_ctx = regras_fallback(pergunta_l)
-        if regra_txt:
-            resposta = ajustar_tom(regra_txt, regra_ctx, perfil)
-            guardar_mensagem(perfil["nome"], pergunta_l, resposta, perfil, contexto=regra_ctx)
-            return resposta
-
-    # 4) fallback genérico final
-    if not resposta:
-        candidatas = [
-            "Vai ser uma noite épica.",
-            "Só posso dizer que vai haver surpresas.",
-            "Não revelo tudo, mas vai ser memorável.",
+    # 🎯 0) Saudações (resposta imediata)
+    if any(t in pergunta_l for t in ["ola", "olá", "boas", "bom dia", "boa tarde", "boa noite"]):
+        respostas = [
+            f"Bom ver-te, {perfil['nome']}! Que nunca falte o café nem o champanhe ☕🍾",
+            f"Olá, {perfil['nome']}! Pronto para a festa? 🎉",
+            f"Boas, {perfil['nome']}! Preparado para dançar? 💃🕺",
+            f"{perfil['nome']}, que bom ler-te! Vai ser épico. 🥳",
+            f"{perfil['nome']}, bem-vindo! Já cheira a festa! ✨",
         ]
-        resposta = random.choice(candidatas)
-        resposta = ajustar_tom(resposta, intencao, perfil)
-        guardar_mensagem(perfil["nome"], pergunta_l, resposta, perfil, contexto=intencao)
+        resposta = random.choice(respostas)
+        guardar_mensagem(perfil["nome"], pergunta_l, resposta, perfil, contexto="saudacao")
         return resposta
-
-    # 5) sucesso via Qdrant → ajustar tom + memorizar
-    resposta = ajustar_tom(resposta, intencao, perfil)
-    guardar_mensagem(perfil["nome"], pergunta_l, resposta, perfil, contexto=intencao)
-    return resposta
 
 # =====================================================
 # ▶️ Execução por mensagem
