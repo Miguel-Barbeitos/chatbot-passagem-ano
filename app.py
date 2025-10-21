@@ -213,31 +213,9 @@ def gerar_resposta(pergunta: str, perfil: dict):
         guardar_mensagem(perfil["nome"], pergunta_l, resposta, perfil, contexto="saudacao")
         return ajustar_tom(resposta, "saudacao", perfil)
 
-    # 4️⃣½ — Futebol (prioridade humorística)
-if any(t in pergunta_l for t in ["benfica", "porto", "sporting", "futebol", "jogo", "ganhar"]):
-    if "benfica" in pergunta_l:
-        resposta = random.choice([
-            "O Benfica é o maior, como sempre! 🔴⚪",
-            "Benfica? Ganha fácil — o resto é conversa! 😎",
-            "O glorioso nunca falha 💪",
-        ])
-    elif "porto" in pergunta_l:
-        resposta = random.choice([
-            "O Porto vai tentar, mas o Benfica é outra liga 😏",
-            "Hmm... acho que hoje não é dia dos dragões 😅",
-            "Respeito o Porto, mas o Benfica é o maior 🔴⚪",
-        ])
-    elif "sporting" in pergunta_l:
-        resposta = random.choice([
-            "O Sporting está forte… mas o Benfica está melhor 😁",
-            "Olha o leão a querer aparecer 😅",
-        ])
-    else:
-        resposta = "Vai ser um jogão! ⚽ Que ganhe o melhor (Benfica, claro 😎)"
-    guardar_mensagem(perfil["nome"], pergunta_l, resposta, perfil, contexto="futebol")
-    return ajustar_tom(resposta, "futebol", perfil)
 
-    # 5️⃣ — Fallback de conversa geral (último recurso)
+        
+        # 5️⃣ — Fallback de conversa geral (último recurso)
     respostas_default = [
         "Vai ser uma noite épica 🎉",
         "Só posso dizer que vai haver surpresas 😉",
